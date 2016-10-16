@@ -16,14 +16,14 @@ Once 1 and 2 are determined, we can create the stimuli order from selected_spkr
 text files.
 
 3. Set placement of task question presentation. Here we have 6 types of runs.
-    0: no task
-    1: 1 task at the end after the last block
-    2: 1 task after either the 1st or 2nd block. We differentiate between 1 and
+    0: no resp
+    1: 1 resp at the end after the last block
+    2: 1 resp after either the 1st or 2nd block. We differentiate between 1 and
        2 beacuse 1 can be a few seconds shorter than 2.
-    3: 2 tasks where one happens after the last block
-    4: 2 tasks, one after each of the first two blocks
-    5: 3 tasks, one after each block
-For the sake of time, we want the runs with fewer tasks and the runs with tasks
+    3: 2 resps where one happens after the last block
+    4: 2 resps, one after each of the first two blocks
+    5: 3 resps, one after each block
+For the sake of time, we want the runs with fewer resps and the runs with resps
 after the last block to occur more frequently.
 
 The output is:
@@ -31,11 +31,62 @@ The output is:
 * A file containing 3 binary digits for each run indicating when task question
 should be presented.
 """
-import numpy as np
 import itertools
+import sys
+import os
+from os.path import join
+import numpy as np
+import numpy.matlib as matlib
+from scipy import io
 
 n_runs = 20
-langs = np.array(['deu', 'enu', 'nld'])
+n_blocks = 3
+n_quilts = 3
+home = '/Users/jthompson/Dropbox/quilts/'
+stimdir = home + 'stimuli/'
+
+
+def save_order(sub_no):
+    """."""
+    expdir = join(home, 'code', 'fmri_exp', 's' + str(sub_no))
+    if not os.path.isdir(expdir):
+        os.mkdir(expdir)
+    langs = np.array(['deu', 'enu', 'nld'])
+    allstims = {'deu': {'female': get_spkrs('deu', 'female'),
+                        'male': get_spkrs('deu', 'male')},
+                'enu': {'female': get_spkrs('enu', 'female'),
+                        'male': get_spkrs('enu', 'male')},
+                'nld': {'female': get_spkrs('nld', 'female'),
+                        'male': get_spkrs('nld', 'male')}}
+
+    lang_order = set_lang_order()
+    gender = set_gender(sub_no)
+    all_runs_resp = set_response_type()
+    for run in range(n_runs):
+        order = np.array([])
+        for block in range(n_blocks):
+            lang = langs[lang_order[run, block]]
+            for quilt in range(n_quilts):
+                g = gender[run, block, quilt]
+                stims = allstims[lang][g]
+                idxtoadd = np.random.choice(len(stims))
+                stimtoadd = stims[idxtoadd]
+                order = np.append(order, stimtoadd)
+                np.delete(allstims[lang][g], idxtoadd)
+        to_save = {'stimuli': order, 'sub': sub_no, 'run': run+1,
+                   'resp': all_runs_resp[run, :]}
+        fname = join(expdir, 's' + str(sub_no) + '_run' + str(run+1) + 'order')
+        np.save(fname, to_save)
+        io.savemat(fname, to_save)
+
+
+def get_spkrs(lang, gen):
+    """."""
+    spkfile = os.path.join(stimdir, lang, 'selected_' + gen + '_spkrs.txt')
+    spkrs = list(np.loadtxt(spkfile, dtype='|S25'))
+    quiltdir = join(stimdir, lang, 'quilts', gen)
+    spkrs = [join(quiltdir, i[:-4] + '_60s.wav') for i in spkrs]
+    return spkrs
 
 
 def set_lang_order():
@@ -66,7 +117,51 @@ def set_lang_order():
 def set_gender(sub_no):
     """Set the gender of the first quilt of each run."""
     if np.mod(sub_no, 2):
-        gender = np.matlib.repmat(['male', 'female'], 1, 10)
+        gender = matlib.repmat(['male', 'female'], 1, (n_runs * n_blocks *
+                                                       n_quilts)/2)
     else:
-        gender = np.matlib.repmat(['female', 'male'], 1, 10)
+        gender = matlib.repmat(['female', 'male'], 1, (n_runs * n_blocks *
+                                                       n_quilts)/2)
+    gender = np.reshape(gender, (n_runs, n_blocks, n_quilts))
     return gender
+
+
+def set_response_type(nresp0=3, nresp1end=2, nresp1=2, nresp2end=1,
+                      nresp2=1, nresp3=1):
+    """Set which block will be followed by a task response period.
+
+    nresp0=3
+    nresp1end=2
+    nresp1=2
+    nresp2end=1
+    nresp2=1
+    nresp3=1
+
+    nresp0 = 3 implies 3 runs with no response per session
+
+    save txt file or mat file per run
+    """
+    assert nresp0 + nresp1end + nresp1 + nresp2end + nresp2 + nresp3 == n_runs/2
+
+    resp0 = matlib.repmat([0, 0, 0], nresp0, 1)
+    resp1end = matlib.repmat([0, 0, 1], nresp1end, 1)
+    resp1_1 = matlib.repmat([1, 0, 0], np.floor(nresp1/2), 1)
+    resp1_2 = matlib.repmat([0, 1, 0], np.ceil(nresp1/2), 1)
+    resp2 = matlib.repmat([1, 1, 0], nresp2, 1)
+    resp2end_1 = matlib.repmat([0, 1, 1], np.floor(nresp2end), 1)
+    resp2end_2 = matlib.repmat([1, 0, 1], np.ceil(nresp2end), 1)
+    resp3 = matlib.repmat([1, 1, 1], nresp3, 1)
+
+    run_resps = np.concatenate([resp0, resp1end, resp1_1, resp1_2, resp2,
+                                resp2end_1, resp2end_2, resp3], 0)
+    np.random.shuffle(run_resps)
+    run_resps_s1 = run_resps.copy()
+    np.random.shuffle(run_resps)
+    run_resps_s2 = run_resps.copy()
+
+    allruns_resps = np.concatenate([run_resps_s1, run_resps_s2], 0)
+    return allruns_resps
+
+if __name__ == "__main__":
+    sub_no = sys.argv[1]
+    save_order(sub_no)
