@@ -62,6 +62,11 @@ def set_lang_order():
     np.random.shuffle(allperms)
     return allperms
 
-# def set_lang(sub_no):
-#
-#     return
+
+def set_gender(sub_no):
+    """Set the gender of the first quilt of each run."""
+    if np.mod(sub_no, 2):
+        gender = np.matlib.repmat(['male', 'female'], 1, 10)
+    else:
+        gender = np.matlib.repmat(['female', 'male'], 1, 10)
+    return gender
