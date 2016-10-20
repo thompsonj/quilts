@@ -230,11 +230,11 @@ def present_stimuli(stimuli, settings):
         win = visual.Window(allowGUI=False, monitor='testMonitor',
                             fullscr=True)
     fixation = visual.ShapeStim(win,
-                                vertices=((0, -0.015), (0, 0.015), (0, 0),
-                                          (-0.01, 0), (0.01, 0)),
+                                vertices=((0, -0.055), (0, 0.055), (0, 0),
+                                          (-0.045, 0), (0.045, 0)),
                                 lineWidth=2,
                                 closeShape=False,
-                                lineColor='white')
+                                lineColor='black')
     global_clock = core.Clock()
 
     # summary of run timing, for each key press:
@@ -268,7 +268,7 @@ def present_stimuli(stimuli, settings):
     max_slippage = .5
 
     # variables
-    n_tr_seen = 0 
+    n_tr_seen = 0
     block = 0
     base1tr = 5
     stimtr = 35
@@ -332,7 +332,7 @@ def present_stimuli(stimuli, settings):
             print 'vol:', vol
             sync_now = False
         return sync_now, escape, output, n_tr_seen, vol, volume_onsets
-        
+
     print 'duration: ', duration
     print 'vol %f of %f' % (vol, settings['volumes'])
     while vol < settings['volumes']:
@@ -405,7 +405,7 @@ def present_stimuli(stimuli, settings):
             rest = False
             playblock = True
         if baseline_end:
-            print 'begin baseline_end'            
+            print 'begin baseline_end'
 #            core.wait(settings['TR']*base2tr, hogCPUperiod=0.2)
             print 'vol %f of %f' % (vol, settings['volumes'])
             # if a response was asked on the last block, don't need to wait as long
@@ -419,7 +419,7 @@ def present_stimuli(stimuli, settings):
             n_tr_seen = 0
             baseline_end = False
             print 'vol %f of %f' % (vol, settings['volumes'])
-            print 'end baseline_end'    
+            print 'end baseline_end'
             break
 
 #            if settings['debug']:
