@@ -47,21 +47,27 @@ stimdir = home + 'stimuli/'
 
 
 def save_order(sub_no):
-    """."""
+    """Save information needed to run fmri experiment for one subject.
+
+    Saves one npy file per run per subject in fmri_exp/[subject]
+
+    Numerical indicators of language identity always follow alphabetical order
+    of the English version of the languages: Dutch (0), English (1), German (2)
+    """
     expdir = join(home, 'code', 'fmri_exp', 's' + str(sub_no))
     if not os.path.isdir(expdir):
         os.mkdir(expdir)
-    langs = np.array(['deu', 'enu', 'nld'])
-    allstims = {'deu': {'female': get_spkrs('deu', 'female'),
-                        'male': get_spkrs('deu', 'male')},
+    langs = np.array(['nld', 'enu', 'deu'])
+    allstims = {'nld': {'female': get_spkrs('nld', 'female'),
+                        'male': get_spkrs('nld', 'male')},
                 'enu': {'female': get_spkrs('enu', 'female'),
                         'male': get_spkrs('enu', 'male')},
-                'nld': {'female': get_spkrs('nld', 'female'),
-                        'male': get_spkrs('nld', 'male')}}
+                'deu': {'female': get_spkrs('deu', 'female'),
+                        'male': get_spkrs('deu', 'male')}}
 
     lang_order = set_lang_order()
     gender = set_gender(sub_no)
-    all_runs_resp = set_response_type()
+    all_runs_resp, all_runs_resp_vol = set_response_type()
     for run in range(n_runs):
         order = np.array([])
         for block in range(n_blocks):
@@ -74,18 +80,22 @@ def save_order(sub_no):
                 order = np.append(order, stimtoadd)
                 np.delete(allstims[lang][g], idxtoadd)
         to_save = {'stimuli': order, 'sub': sub_no, 'run': run+1,
-                   'resp': all_runs_resp[run, :]}
+                   'resp': all_runs_resp[run, :],
+                   'vols': all_runs_resp_vol[run, 0],
+                   'lang': lang_order[run, :]}
         fname = join(expdir, 's' + str(sub_no) + '_run' + str(run+1) + 'order')
         np.save(fname, to_save)
         io.savemat(fname, to_save)
+    print all_runs_resp_vol
+    return to_save
 
 
 def get_spkrs(lang, gen):
     """."""
     spkfile = os.path.join(stimdir, lang, 'selected_' + gen + '_spkrs.txt')
     spkrs = list(np.loadtxt(spkfile, dtype='|S25'))
-    quiltdir = join(stimdir, lang, 'quilts', gen)
-    spkrs = [join(quiltdir, i[:-4] + '_60s.wav') for i in spkrs]
+    filtdir = join('stimuli', lang, gen)
+    spkrs = [join(filtdir, i[:-4] + '_60s_filtered.wav') for i in spkrs]
     return spkrs
 
 
@@ -144,23 +154,39 @@ def set_response_type(nresp0=3, nresp1end=2, nresp1=2, nresp2end=1,
     assert nresp0 + nresp1end + nresp1 + nresp2end + nresp2 + nresp3 == n_runs/2
 
     resp0 = matlib.repmat([0, 0, 0], nresp0, 1)
+    resp0vol = matlib.repmat(353, nresp0, 1)
     resp1end = matlib.repmat([0, 0, 1], nresp1end, 1)
+    resp1endvol = matlib.repmat(355, nresp1end, 1)
     resp1_1 = matlib.repmat([1, 0, 0], np.floor(nresp1/2), 1)
+    resp1_1vol = matlib.repmat(361, np.floor(nresp1/2), 1)
     resp1_2 = matlib.repmat([0, 1, 0], np.ceil(nresp1/2), 1)
-    resp2 = matlib.repmat([1, 1, 0], nresp2, 1)
-    resp2end_1 = matlib.repmat([0, 1, 1], np.floor(nresp2end), 1)
+    resp1_2vol = matlib.repmat(361, np.ceil(nresp1/2), 1)
+    resp2end_1 = matlib.repmat([0, 1, 1], np.floor(nresp2end/2), 1)
+    resp2end_1vol = matlib.repmat(363, np.floor(nresp2end/2), 1)
     resp2end_2 = matlib.repmat([1, 0, 1], np.ceil(nresp2end), 1)
+    resp2end_2vol = matlib.repmat(363, np.ceil(nresp2end), 1)
+    resp2 = matlib.repmat([1, 1, 0], nresp2, 1)
+    resp2vol = matlib.repmat(369, nresp2, 1)
     resp3 = matlib.repmat([1, 1, 1], nresp3, 1)
+    resp3vol = matlib.repmat(371, nresp3, 1)
 
     run_resps = np.concatenate([resp0, resp1end, resp1_1, resp1_2, resp2,
                                 resp2end_1, resp2end_2, resp3], 0)
-    np.random.shuffle(run_resps)
-    run_resps_s1 = run_resps.copy()
-    np.random.shuffle(run_resps)
-    run_resps_s2 = run_resps.copy()
+    run_resps_vol = np.concatenate([resp0vol, resp1endvol, resp1_1vol,
+                                    resp1_2vol, resp2vol,
+                                    resp2end_1vol, resp2end_2vol, resp3vol], 0)
+    idx = np.arange(run_resps.shape[0])
+    np.random.shuffle(idx)
+    run_resps_s1 = run_resps[idx].copy()
+    run_resps_vol_s1 = run_resps_vol[idx].copy()
+
+    np.random.shuffle(idx)
+    run_resps_s2 = run_resps[idx].copy()
+    run_resps_vol_s2 = run_resps_vol[idx].copy()
 
     allruns_resps = np.concatenate([run_resps_s1, run_resps_s2], 0)
-    return allruns_resps
+    allruns_resps_vol = np.concatenate([run_resps_vol_s1, run_resps_vol_s2], 0)
+    return allruns_resps, allruns_resps_vol
 
 if __name__ == "__main__":
     sub_no = sys.argv[1]
