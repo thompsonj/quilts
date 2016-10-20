@@ -175,14 +175,24 @@ def set_response_type(nresp0=3, nresp1end=2, nresp1=2, nresp2end=1,
     run_resps_vol = np.concatenate([resp0vol, resp1endvol, resp1_1vol,
                                     resp1_2vol, resp2vol,
                                     resp2end_1vol, resp2end_2vol, resp3vol], 0)
-    idx = np.arange(run_resps.shape[0])
-    np.random.shuffle(idx)
-    run_resps_s1 = run_resps[idx].copy()
-    run_resps_vol_s1 = run_resps_vol[idx].copy()
 
-    np.random.shuffle(idx)
-    run_resps_s2 = run_resps[idx].copy()
-    run_resps_vol_s2 = run_resps_vol[idx].copy()
+    def get_random_order():
+        consec_noresp = True
+        while consec_noresp:
+            idx = np.arange(run_resps.shape[0])
+            np.random.shuffle(idx)
+            rand_run_resps = run_resps[idx].copy()
+            rand_run_resps_vol = run_resps_vol[idx].copy()
+            # Get number of consecutive instances of the same run type
+            grouped = np.array([[x[0], sum(1 for i in y)] for x, y in
+                                itertools.groupby(rand_run_resps_vol)])
+            noresps = grouped[grouped[:, 0] == 353, 1]
+            # Re-randomize if there are two no-response runs back to back
+            consec_noresp = sum(noresps > 1)
+        return rand_run_resps, rand_run_resps_vol
+
+    run_resps_s1, run_resps_vol_s1 = get_random_order()
+    run_resps_s2, run_resps_vol_s2 = get_random_order()
 
     allruns_resps = np.concatenate([run_resps_s1, run_resps_s2], 0)
     allruns_resps_vol = np.concatenate([run_resps_vol_s1, run_resps_vol_s2], 0)
