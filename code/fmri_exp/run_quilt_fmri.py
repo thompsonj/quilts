@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-"""
-Executes one full run of the Ripples Combinations fMRI experiment.
+"""Executes one full run of the phone-quilts fMRI experiment.
 
 Stimuli for this experiment consist of 180 1-minute speech quilts made from
 German, Dutch, and English speech.
@@ -12,7 +11,6 @@ configuration:
     No silent gap
 
 A different random order of stimulus presentation is used for each subject.
-
 """
 
 from os import path, mkdir
@@ -116,6 +114,7 @@ def initialize_run():
     run = settings['run']
     run_info = np.load(path.join(sub, sub + '_run' + str(run) + 'order.npy')).item()
     settings['stimuli'] = run_info['stimuli']
+    settings['lang'] = run_info['lang']
     if not path.isdir(settings['home_dir']):
         mkdir(settings['home_dir'])
 
@@ -248,7 +247,9 @@ def present_stimuli(stimuli, settings):
     stim_onsets = np.zeros(len(stimuli))
 
     # Response log
-    resp_log = u'resp_onset   hit/miss \n'
+    n_resp = sum(settings['resp'])
+    correct = 0
+    resp_log = u'resp_onset block correct/incorrect \n'
 
     # Key press log
     key_code = settings['sync']
@@ -277,41 +278,55 @@ def present_stimuli(stimuli, settings):
     resttr = 11
     base2tr = 11
     # states
-    sync_now = False
-    escape = False
-    response = False
-    playblock = False
-    baseline_start = True  # start with baseline
-    baseline_end = False
+    # sync_now = False
+    # escape = False
+    # response = False
+    # playblock = False
+    # baseline_start = True  # start with baseline
+    # baseline_end = False
+    # listen_for_resp = False
+    # responded = False
+    states = {'sync_now': False,
+              'rest': False,
+              'escape': False,
+              'response': False,
+              'playblock': False,
+              'baseline_start': True,
+              'baseline_end': False,
+              'listen_for_resp': False,
+              'responded': False}
     # wait 5 TRs after the last stimulus
     duration = settings['volumes'] * settings['TR']
     # launch: operator selects Scan or Test (emulate); see API documentation
     vol = launchScan(win, settings, globalClock=global_clock)
     fixation.draw()
     win.flip()
-    def parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets):
+
+    def parse_keys(states, output, resp_log, n_tr_seen, vol,
+                   volume_onsets):
         core.wait(.0001, hogCPUperiod=0.00001)
+        now = global_clock.getTime()
         all_keys = event.getKeys()
         # Log all key preses
         for key in all_keys:
             if key != settings['sync']:
-                output += u"%3d  %7.3f %s\n" % (vol - 1, global_clock.getTime(),
+                output += u"%3d  %7.3f %s\n" % (vol - 1, now,
                                                 unicode(key))
         # Let the user close the program
         if 'escape' in all_keys:
             output += u'user cancel, '
-            escape = True
+            states['escape'] = True
         else:
-            escape = False
+            states['escape'] = False
         # Detect sync or infer it should have happened:
         if settings['sync'] in all_keys:
-            sync_now = key_code
-            onset = global_clock.getTime()
+            states['sync_now'] = key_code
+            onset = now
         if infer_missed_sync:
             expected_onset = vol * settings['TR']
             now = global_clock.getTime()
             if now > expected_onset + max_slippage:
-                sync_now = u'(inferred onset)'
+                states['sync_now'] = u'(inferred onset)'
                 onset = expected_onset
         # Save lang info so that you can mark responses as hit or not
         # Detect button press from subject, record performance on resp trials
@@ -323,15 +338,35 @@ def present_stimuli(stimuli, settings):
         #     if resp and (global_clock.getTime() - resp_onset) > 3:
         #         resp_log += u' miss\n'
         #         resp = False
-        if sync_now:
-            output += u"%3d  %7.3f %s\n" % (vol, onset, sync_now)
+        if states['sync_now']:
+            output += u"%3d  %7.3f %s\n" % (vol, onset, states['sync_now'])
             volume_onsets[vol - 1] = onset  # are we sure about -1 here?
             # Count tiggers to know when to present stimuli
             n_tr_seen += 1
             vol += 1
             print 'vol:', vol
-            sync_now = False
-        return sync_now, escape, output, n_tr_seen, vol, volume_onsets
+            states['sync_now'] = False
+        if states['listen_for_resp']:
+            true_lang = unicode(settings['lang'][0, block-1]+1)
+            if true_lang in all_keys:
+                print 'correct response'
+                resp_log += u'%7.3f %1f correct\n' % (now, block-1)
+                output += (u"%3d  %7.3f correct identification of %s \n" %
+                           (vol - 1, now, true_lang))
+                np.add(correct, 1)
+                states['responded'] = True
+            else:
+                for r in ['1', '2', '3']:
+                    if r in all_keys:
+                        print 'incorrect response', r
+                        print 'true lang: ', true_lang
+                        resp_log += u'%7.3f %1f incorrect\n' % (now, block-1)
+                        output += (u"%3d  %7.3f incorrect:") % (vol - 1, now)
+                        output += (u" Pressed %s instead of %s \n" % (r,
+                                    true_lang))
+                        states['responded'] = True
+
+        return states, output, resp_log, n_tr_seen, vol, volume_onsets
 
     print 'duration: ', duration
     print 'vol %f of %f' % (vol, settings['volumes'])
@@ -339,18 +374,18 @@ def present_stimuli(stimuli, settings):
         if global_clock.getTime() > duration:
             print 'overdue'
             break
-        sync_now, escape, output, n_tr_seen, vol, volume_onsets = parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets)
-        if escape:
+        states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
+        if states['escape']:
             break
-        if baseline_start:
+        if states['baseline_start']:
             while n_tr_seen < base1tr:
-                sync_now, escape, output, n_tr_seen, vol, volume_onsets = parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets)
+                states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
             n_tr_seen = 0
-            baseline_start = False
-            playblock = True
-        if playblock:
+            states['baseline_start'] = False
+            states['playblock'] = True
+        if states['playblock']:
             print 'playblock'
-            for stimi in range(block*3,(block*3)+3):
+            for stimi in range(block*3, (block*3)+3):
                 print settings['stimuli'][stimi]
                 stim = stimuli[stimi]
                 now = global_clock.getTime()
@@ -362,49 +397,61 @@ def present_stimuli(stimuli, settings):
                 while n_tr_seen < stimtr:
                     # Wait longer while stimuli are playing to let CPU catch up
                     core.wait(.01, hogCPUperiod=0.001)
-                    sync_now, escape, output, n_tr_seen, vol, volume_onsets = parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets)
-                    if escape:
+                    states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
+                    if states['escape']:
                         break
                 n_tr_seen = 0
-            playblock = False
+            states['playblock'] = False
             if settings['resp'][block]:
                 print settings['resp'][block]
-                response = True
+                states['response'] = True
             elif block == 2 and not settings['resp'][block]:
-                baseline_end = True
+                states['baseline_end'] = True
             else:
-                rest = True
+                states['rest'] = True
             block += 1
-        if response:
+        if states['response']:
             print 'response'
             # Wait for HRF
             while n_tr_seen < waithrftr:
-                sync_now, escape, output, n_tr_seen, vol, volume_onsets = parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets)
+                states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
+            states['listen_for_resp'] = True
             # Present task question
             n_tr_seen = 0
             resp_text.draw()
             win.flip()
             while n_tr_seen < responsetr:
-                sync_now, escape, output, n_tr_seen, vol, volume_onsets = parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets)
+                states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
             n_tr_seen = 0
             fixation.draw()
             win.flip()
-            response = False
+            states['response'] = False
             if block >= 3:  # block is incremented at the end of play block so after last block will be 3
-                baseline_end = True
+                states['baseline_end'] = True
             else:
-                rest = True
-        if rest:
+                states['rest'] = True
+        if states['rest']:
             print 'rest'
             while n_tr_seen < resttr:
                 if global_clock.getTime() > duration:
                     print 'overdue'
                     break
-                sync_now, escape, output, n_tr_seen, vol, volume_onsets = parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets)
+                states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
             n_tr_seen = 0
-            rest = False
-            playblock = True
-        if baseline_end:
+            states['rest'] = False
+            states['playblock'] = True
+            # If no response was made, note as missed
+            if states['listen_for_resp'] and not states['responded']:
+                true_lang = unicode(settings['lang'][0, block-1]+1)
+                print 'no response'
+                print 'true lang: ', true_lang
+                resp_log += u'%7.3f %1f no response\n' % (now, block-1)
+                output += (u"%3d  %7.3f no response:") % (vol - 1, now)
+                output += (u" Should have pressed %s \n" % (true_lang))
+
+            states['responded'] = False
+            states['listen_for_resp'] = False
+        if states['baseline_end']:
             print 'begin baseline_end'
 #            core.wait(settings['TR']*base2tr, hogCPUperiod=0.2)
             print 'vol %f of %f' % (vol, settings['volumes'])
@@ -412,12 +459,12 @@ def present_stimuli(stimuli, settings):
             if block == 3 and settings['resp'][2]:
                 base2tr = 5
             while n_tr_seen < base2tr:
-                sync_now, escape, output, n_tr_seen, vol, volume_onsets = parse_keys(sync_now, escape, output, n_tr_seen, vol, volume_onsets)
+                states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
                 # In the event that we are still waiting for trs that are not comming, get out
                 if global_clock.getTime() > duration:
                     break
             n_tr_seen = 0
-            baseline_end = False
+            states['baseline_end'] = False
             print 'vol %f of %f' % (vol, settings['volumes'])
             print 'end baseline_end'
             break
@@ -457,13 +504,13 @@ def present_stimuli(stimuli, settings):
     data_file.close()
 
     # Wite log of resp trials
-    # fname = path.join(datapath,
-    #                   "%s_run%s_resp_trials_%s" %
-    #                   (settings['subject'], settings['run'], date_str))
-    #
-    # data_file = open(fname + '.txt', 'w')
-    # data_file.write(resp_log)
-    # data_file.close()
+    fname = path.join(datapath,
+                      "%s_run%s_resp_blocks_%s" %
+                      (settings['subject'], settings['run'], date_str))
+
+    data_file = open(fname + '.txt', 'w')
+    data_file.write(resp_log)
+    data_file.close()
 
     # Write log of stimulus presentations
     fname = path.join(datapath,

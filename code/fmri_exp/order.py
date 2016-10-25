@@ -82,7 +82,7 @@ def save_order(sub_no):
         to_save = {'stimuli': order, 'sub': sub_no, 'run': run+1,
                    'resp': all_runs_resp[run, :],
                    'vols': all_runs_resp_vol[run, 0],
-                   'lang': lang_order[run, :]}
+                   'lang': np.array(lang_order[run, :])}
         fname = join(expdir, 's' + str(sub_no) + '_run' + str(run+1) + 'order')
         np.save(fname, to_save)
         io.savemat(fname, to_save)
@@ -199,5 +199,5 @@ def set_response_type(nresp0=3, nresp1end=2, nresp1=2, nresp2end=1,
     return allruns_resps, allruns_resps_vol
 
 if __name__ == "__main__":
-    sub_no = sys.argv[1]
+    sub_no = int(sys.argv[1])
     save_order(sub_no)
