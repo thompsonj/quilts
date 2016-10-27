@@ -188,9 +188,7 @@ def load_stimuli(settings):
 
 
 def present_stimuli(stimuli, settings):
-    """
-    Presents stimuli in the specified order with the specified inter-stimuli-
-    interval based on triggers from the scanner.
+    """Presents stimuli in the specified order timed by scanner triggers.
 
     Uses psychopy's launchScan module to add a test/scan switch on the main
     window. If in test mode, launchScan immitates the scanner by sending
@@ -465,6 +463,14 @@ def present_stimuli(stimuli, settings):
                     break
             n_tr_seen = 0
             states['baseline_end'] = False
+            # If no response was made, note as missed
+            if states['listen_for_resp'] and not states['responded']:
+                true_lang = unicode(settings['lang'][0, block-1]+1)
+                print 'no response'
+                print 'true lang: ', true_lang
+                resp_log += u'%7.3f %1f no response\n' % (now, block-1)
+                output += (u"%3d  %7.3f no response:") % (vol - 1, now)
+                output += (u" Should have pressed %s \n" % (true_lang))
             print 'vol %f of %f' % (vol, settings['volumes'])
             print 'end baseline_end'
             break
