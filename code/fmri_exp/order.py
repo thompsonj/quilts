@@ -57,6 +57,11 @@ def save_order(sub_no):
     expdir = join(home, 'code', 'fmri_exp', 's' + str(sub_no))
     if not os.path.isdir(expdir):
         os.mkdir(expdir)
+    else:
+        print '%s already exists. Quitting instead of overwriting.' % expdir
+        raise Exception
+
+
     langs = np.array(['nld', 'enu', 'deu'])
     allstims = {'nld': {'female': get_spkrs('nld', 'female'),
                         'male': get_spkrs('nld', 'male')},
