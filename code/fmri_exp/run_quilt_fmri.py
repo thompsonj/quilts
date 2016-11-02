@@ -19,7 +19,6 @@ from psychopy import core, visual, sound, gui, event, logging, prefs
 from psychopy.tools.filetools import fromFile, toFile
 from psychopy.hardware.emulator import launchScan
 
-
 __author__ = "Jessica Thompson"
 
 
@@ -152,11 +151,12 @@ def load_stimuli(settings):
         Sounds to be presented in this run in the order in which they
 
     """
-    sub = settings['subject']
-    run = settings['run']
-    run_info = np.load(path.join(sub, sub + '_run' + str(run) +
-                       'order.npy')).item()
-    fnames = run_info['stimuli']
+    # sub = settings['subject']
+    # run = settings['run']
+    # run_info = np.load(path.join(sub, sub + '_run' + str(run) +
+    #                    'order.npy')).item()
+    # fnames = run_info['stimuli']
+    fnames = settings['stimuli']
     stimuli = np.array(
         [sound.SoundPyo(f) for f in fnames])
 
@@ -253,6 +253,7 @@ def present_stimuli(stimuli, settings):
     responsetr = 2
     resttr = 11
     base2tr = 11
+    stim = None
     # Dict to maintain state of the program
     state = {'sync_now': False,
              'rest': False,
@@ -281,6 +282,9 @@ def present_stimuli(stimuli, settings):
         # Let the user close the program
         if 'escape' in all_keys:
             out += u'user cancel, '
+            if stim:
+                stim.stop()
+            core.quit()
             sys.exit()
         # Detect sync or infer it should have happened:
         if settings['sync'] in all_keys:
