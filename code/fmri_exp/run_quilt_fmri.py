@@ -5,58 +5,55 @@ Stimuli for this experiment consist of 180 1-minute speech quilts made from
 German, Dutch, and English speech.
 
 The experiment uses a continuous design with the following
-configuration:
-
-    TR = 1.7s
-    No silent gap
+configuration (TR = 1.7s, no silent gap)
 
 A different random order of stimulus presentation is used for each subject.
+
 """
 
 from os import path, mkdir
-from psychopy import core, visual, sound, gui, data, event, logging, prefs
+import time
+import sys
+import numpy as np
+from psychopy import core, visual, sound, gui, event, logging, prefs
 from psychopy.tools.filetools import fromFile, toFile
 from psychopy.hardware.emulator import launchScan
-import time
-import numpy as np
-import scipy.io as sio
-from glob import glob
+
 
 __author__ = "Jessica Thompson"
 
 
 def run():
-    """ Execute one experimental run of the experiment """
+    """Execute one experimental run of the experiment."""
     settings = initialize_run()
     stimuli = load_stimuli(settings)
     present_stimuli(stimuli, settings)
 
 
 def initialize_run():
-    """
-    Initalizes settings and log file for this run of the experiment.
+    """Initalize settings and log file for this run of the experiment.
 
     Returns
     -------
     settings : dict
         Contains various experimental settings such as MR imaging parameters
 
-        subject : Subject code use for loading/saving data
-        run : int from 1-20
-        debug : If true, print extra info
-        home_dir : Parent directory, assumed to contain a directory 'code'
+        subject : Subject code use for loading/saving data, e.g. 's1'
+        run : integer from 1-20
+        debug : If true, don't display in full-screen mode
+        home_dir : Parent directory, assumed to contain a directory 'fmri_exp'
                    containing one directory per subject
         TR : Time between acquisitions
         volumes : Number of whole-brain 3D volumes to collect this run
         sync : Character to use as the sync timing event; assumed to come at
                start of a volume
-        resp : Key codes for resp trials
+        resp : binary array indicating which blocks should be followed by a
+               response probe
         skip : Number of volumes lacking a sync pulse at start of scan (for T1
                stabilization)
         scan_sound : In test mode only, play a tone as a reminder of scanner
                      noise
     """
-
     logging.console.setLevel(logging.DEBUG)
     if prefs.general['audioLib'][0] == 'pyo':
         # if pyo is the first lib in the list of preferred libs then we could
@@ -74,7 +71,7 @@ def initialize_run():
             'run': 1,  # int from 1-20
             'debug': True,  # If true, print extra info
             'home_dir': '..',  # Parent directory, assumed to contain a
-            # directory 'code' containing one directory
+            # directory 'fmri_exp' containing one directory
             # per subject
             'TR': 1.7,  # Time between acquisitions
             'volumes': 371,  # Number of whole-brain 3D volumes / frames
@@ -87,8 +84,8 @@ def initialize_run():
             'sound': True  # In test mode only, play a tone as a
             # reminder of scanner noise
         }
+    # First, confirm subject number and run number
     subandrun = {'sub': settings['subject'], 'run':  settings['run']}
-    # Get subject number and run number first
     info_dlg = gui.DlgFromDict(subandrun)
     sub = subandrun['sub']
     run = subandrun['run']
@@ -98,9 +95,10 @@ def initialize_run():
     settings['run'] = run
     settings['volumes'] = int(run_info['vols'])
     settings['resp'] = run_info['resp']
+    # Confirm all settings
     info_dlg = gui.DlgFromDict(settings, title='settings',
                                order=['subject', 'run', 'volumes', 'debug'])
-
+    # Save settings for next run
     if info_dlg.OK:
         next_settings = settings.copy()
         if settings['run'] == 20:
@@ -112,7 +110,9 @@ def initialize_run():
         core.quit()
     sub = settings['subject']
     run = settings['run']
-    run_info = np.load(path.join(sub, sub + '_run' + str(run) + 'order.npy')).item()
+    # Load order info again incase sub/run was altered in previous dialog box
+    run_info = np.load(path.join(sub, sub + '_run' + str(run) +
+                                 'order.npy')).item()
     settings['stimuli'] = run_info['stimuli']
     settings['lang'] = run_info['lang']
     if not path.isdir(settings['home_dir']):
@@ -129,8 +129,7 @@ def initialize_run():
 
 
 def load_stimuli(settings):
-    """
-    Load wav files, order and resp values for given run and subject.
+    """Load wav files of stimuli for a given run and subject.
 
     All stimuli are loaded at the beginning of the run to avoid long
     computations during the presentation of the stimuli.
@@ -149,40 +148,16 @@ def load_stimuli(settings):
     Returns
     -------
     stimuli :  ndarray of psychopy.sound.SoundPyo objects
-        Sounds to be presented in this run in the order in which they were
-        listed in either SimpleWavFileNames.txt or MixWavFileNames.txt
-    order : ndarray
-        Specifies order of presentation as indices into the stimuli array
-    resp: ndarray
+        Sounds to be presented in this run in the order in which they
+
     """
-#    if settings['order'] == 'ABBA':
-#        simple_runs = [1, 4, 5, 8, 9, 12]
-#        mix_runs = [2, 3, 6, 7, 10, 11]
-#    elif settings['order'] == 'BAAB':
-#        mix_runs = [1, 4, 5, 8, 9, 12]
-#        simple_runs = [2, 3, 6, 7, 10, 11]
-#    # Load stimuli
-#    if settings['run'] in simple_runs:
-#        # Load simple ripples for odd runs
-#        fnames = np.loadtxt('SimpleWavFileNames.txt', dtype=str)
-#    elif settings['run'] in mix_runs:
-#        # Load mix ripples for even runs
-#        fnames = np.loadtxt('MixWavFileNames.txt', dtype=str)
     sub = settings['subject']
     run = settings['run']
-    run_info = np.load(path.join(sub, sub + '_run' + str(run) + 'order.npy')).item()
+    run_info = np.load(path.join(sub, sub + '_run' + str(run) +
+                       'order.npy')).item()
     fnames = run_info['stimuli']
     stimuli = np.array(
         [sound.SoundPyo(f) for f in fnames])
-#    order = np.load(path.join(settings['subject'],
-#                              "%s_run%s_order.npy" % (settings['subject'],
-#                                                      settings['run'])))
-#    jitter = np.load(path.join(settings['subject'],
-#                               "%s_run%s_jitter.npy" % (settings['subject'],
-#                                                        settings['run'])))
-
-#    extra_vols = settings['end_vols'] + settings['skip']
-#    settings['volumes'] = np.sum(jitter) + extra_vols
 
     return stimuli
 
@@ -275,18 +250,9 @@ def present_stimuli(stimuli, settings):
     responsetr = 2
     resttr = 11
     base2tr = 11
-    # states
-    # sync_now = False
-    # escape = False
-    # response = False
-    # playblock = False
-    # baseline_start = True  # start with baseline
-    # baseline_end = False
-    # listen_for_resp = False
-    # responded = False
+    # Dict to maintain state of the program
     states = {'sync_now': False,
               'rest': False,
-              'escape': False,
               'response': False,
               'playblock': False,
               'baseline_start': True,
@@ -313,9 +279,7 @@ def present_stimuli(stimuli, settings):
         # Let the user close the program
         if 'escape' in all_keys:
             output += u'user cancel, '
-            states['escape'] = True
-        else:
-            states['escape'] = False
+            sys.exit()
         # Detect sync or infer it should have happened:
         if settings['sync'] in all_keys:
             states['sync_now'] = key_code
@@ -373,8 +337,6 @@ def present_stimuli(stimuli, settings):
             print 'overdue'
             break
         states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
-        if states['escape']:
-            break
         if states['baseline_start']:
             while n_tr_seen < base1tr:
                 states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
@@ -396,8 +358,6 @@ def present_stimuli(stimuli, settings):
                     # Wait longer while stimuli are playing to let CPU catch up
                     core.wait(.01, hogCPUperiod=0.001)
                     states, output, resp_log, n_tr_seen, vol, volume_onsets = parse_keys(states, output, resp_log, n_tr_seen, vol, volume_onsets)
-                    if states['escape']:
-                        break
                 n_tr_seen = 0
             states['playblock'] = False
             if settings['resp'][block]:
