@@ -40,8 +40,6 @@ def initialize_run():
         subject : Subject code use for loading/saving data, e.g. 's1'
         run : integer from 1-20
         debug : If true, don't display in full-screen mode
-        home_dir : Parent directory, assumed to contain a directory 'fmri_exp'
-                   containing one directory per subject
         TR : Time between acquisitions
         volumes : Number of whole-brain 3D volumes to collect this run
         sync : Character to use as the sync timing event; assumed to come at
@@ -69,9 +67,6 @@ def initialize_run():
             'subject': 's0',  # Subject code use for loading/saving data
             'run': 1,  # int from 1-20
             'debug': True,  # If true, print extra info
-            'home_dir': '..',  # Parent directory, assumed to contain a
-            # directory 'fmri_exp' containing one directory
-            # per subject
             'TR': 1.7,  # Time between acquisitions
             'volumes': 371,  # Number of whole-brain 3D volumes / frames
             # this will be updated when known
@@ -115,8 +110,6 @@ def initialize_run():
                                  'order.npy')).item()
     settings['stimuli'] = run_info['stimuli']
     settings['lang'] = run_info['lang']
-    if not path.isdir(settings['home_dir']):
-        mkdir(settings['home_dir'])
 
     # Create dated log file
     date_str = time.strftime("%b_%d_%H%M", time.localtime())
@@ -300,8 +293,8 @@ def present_stimuli(stimuli, settings):
             out += u"%3d  %7.3f %s\n" % (vol, onset, state['sync_now'])
             vol_onsets[vol - 1] = onset  # are we sure about -1 here?
             # Count tiggers to know when to present stimuli
-            n_tr += 1
-            vol += 1
+            np.add(n_tr, 1)
+            np.add(vol, 1)
             print 'vol:', vol
             state['sync_now'] = False
         # Detect button press from subject, record performance on probes
@@ -325,7 +318,7 @@ def present_stimuli(stimuli, settings):
                                 (r, true_lang))
                         state['responded'] = True
 
-        return state, out, resp_log, n_tr, vol, vol_onsets
+        return state, out, resp_log, vol_onsets
 
     print 'duration: ', duration
     print 'vol %f of %f' % (vol, settings['volumes'])
@@ -333,12 +326,12 @@ def present_stimuli(stimuli, settings):
         if global_clock.getTime() > duration:
             print 'overdue'
             break
-        state, out, resp_log, n_tr, vol, vol_onsets = \
-            parse_keys(state, out, resp_log, n_tr, vol, vol_onsets)
+        state, out, resp_log, vol_onsets = \
+            parse_keys(state, out, resp_log, vol_onsets)
         if state['baseline_start']:
             while n_tr < base1tr:
-                state, out, resp_log, n_tr, vol, vol_onsets = \
-                    parse_keys(state, out, resp_log, n_tr, vol, vol_onsets)
+                state, out, resp_log, vol_onsets = \
+                    parse_keys(state, out, resp_log, vol_onsets)
             n_tr = 0
             state['baseline_start'] = False
             state['playblock'] = True
@@ -356,8 +349,8 @@ def present_stimuli(stimuli, settings):
                 while n_tr < stimtr:
                     # Wait longer while stimuli are playing to let CPU catch up
                     core.wait(.01, hogCPUperiod=0.001)
-                    state, out, resp_log, n_tr, vol, vol_onsets = \
-                        parse_keys(state, out, resp_log, n_tr, vol, vol_onsets)
+                    state, out, resp_log, vol_onsets = \
+                        parse_keys(state, out, resp_log, vol_onsets)
                 n_tr = 0
             state['playblock'] = False
             if settings['resp'][block]:
@@ -372,16 +365,16 @@ def present_stimuli(stimuli, settings):
             print 'response'
             # Wait for HRF
             while n_tr < waithrftr:
-                state, out, resp_log, n_tr, vol, vol_onsets = \
-                    parse_keys(state, out, resp_log, n_tr, vol, vol_onsets)
+                state, out, resp_log, vol_onsets = \
+                    parse_keys(state, out, resp_log, vol_onsets)
             state['listen_for_resp'] = True
             # Present task question
             n_tr = 0
             resp_text.draw()
             win.flip()
             while n_tr < responsetr:
-                state, out, resp_log, n_tr, vol, vol_onsets = \
-                    parse_keys(state, out, resp_log, n_tr, vol, vol_onsets)
+                state, out, resp_log, vol_onsets = \
+                    parse_keys(state, out, resp_log, vol_onsets)
             n_tr = 0
             fixation.draw()
             win.flip()
@@ -397,8 +390,8 @@ def present_stimuli(stimuli, settings):
                 if global_clock.getTime() > duration:
                     print 'overdue'
                     break
-                state, out, resp_log, n_tr, vol, vol_onsets = \
-                    parse_keys(state, out, resp_log, n_tr, vol, vol_onsets)
+                state, out, resp_log, vol_onsets = \
+                    parse_keys(state, out, resp_log, vol_onsets)
             n_tr = 0
             state['rest'] = False
             state['playblock'] = True
@@ -421,8 +414,8 @@ def present_stimuli(stimuli, settings):
             if block == 3 and settings['resp'][2]:
                 base2tr = 5
             while n_tr < base2tr:
-                state, out, resp_log, n_tr, vol, vol_onsets = \
-                    parse_keys(state, out, resp_log, n_tr, vol, vol_onsets)
+                state, out, resp_log, vol_onsets = \
+                    parse_keys(state, out, resp_log, vol_onsets)
                 # In the event that we are still waiting for trs that are not
                 # coming, get out of loop
                 if global_clock.getTime() > duration:
@@ -456,7 +449,6 @@ def present_stimuli(stimuli, settings):
     print "Total duration = %7.3f s (%7.3f min)" % (total_dur, total_dur / 60)
 
     # Save data and log files
-    # datapath = path.join(settings['home_dir'], 'data', settings['subject'])
     datapath = path.join(settings['subject'], 'run_data')
     if not path.isdir(datapath):
         mkdir(datapath)
@@ -470,7 +462,8 @@ def present_stimuli(stimuli, settings):
     data_file.write(out)
     data_file.close()
 
-    # Wite log of resp trials
+    # Write log of resp trials
+    resp_log += u'%f out of %f correct\n' % (correct, n_resp)
     fname = path.join(datapath,
                       "%s_run%s_resp_blocks_%s" %
                       (settings['subject'], settings['run'], date_str))
