@@ -159,36 +159,37 @@ def load_stimuli(settings):
 def present_stimuli(stimuli, settings):
     """Present stimuli in the specified order timed by scanner triggers.
 
-    Uses psychopy's launchScan module to add a test/scan switch on the main
-    window. If in test mode, launchScan immitates the scanner by sending
+    Uses psychopy's launchScan module which adds a test/scan switch on the
+    first window. If in test mode, launchScan immitates the scanner by sending
     triggers (key press '5') and playing scanner noise when the scanner would
-    be acquiring a volume.
+    be acquiring a volume (if settings['sound'] == True).
 
-    Saves the following log files to the subject's folder in a directory called
-    'data' in the parent directory.
-        [subject]_run[run]_key_presses_[date].txt
-        [subject]_run[run]_resp_trials_[date].txt
-        [subject]_run[run]_stimuli_timing_[date].txt
-        [subject]_run[run]_stimuli_onsets_[date].npy
-        [subject]_run[run]_volumes_onsets_[date].npy
+    The inner function parse_keys() is called regularly to listen for key
+    presses and update the dictionary of state variables accordingly. The rest
+    of the function uses various state variables to determine what actions to
+    take, e.g. play a sound, present a response probe, rest.
 
-    Saves the following date stamped copies of the order and jitter used for
-    this run in the subject directory in the current directory:
-        [subject]_run[run]_order_[date].npy
-        [subject]_run[run]_jitter_[date].npy
+    Saves the following files in a directory called 'run_data' in the subject
+    directory.
+        [subject]_run[run]_all_keys_[date].txt: All key presses recorded
+        [subject]_run[run]_resp_blocks_[date].txt: Task performance
+        [subject]_run[run]_stimuli_timing_[date].txt: Stim name and onset time
+        [subject]_run[run]_settings_[date].npy: settings dict used this run
+        [subject]_run[run]_stimuli_onsets_[date].npy: Stim name and onset time
+        [subject]_run[run]_vol_onsets_[date].npy: Onset time of all triggers
+
+    An automated log file is also saved in logs/
 
     Parameters
     ----------
     stimuli :  ndarray of psychopy.sound.SoundPyo objects
-        Sounds to be presented in this run in the order in which they were
-        listed in either SimpleWavFileNames.txt or MixWavFileNames.txt
-    order : ndarray
-        Specifies order of presentation as indices into the stimuli array
-    jitter : ndarray
-        Inter-stimuli-intervals in multiples of TRs (2, 3 or 4)
+        Sounds to be presented in this run in the order in which they are to be
+        presented. As determined by order.py
     settings : dict
         Contains various experimental settings such as MR imaging parameters
 
+    TODO:
+    - present stimuli is too complex
     """
     if settings['debug']:
         win = visual.Window(fullscr=False)
@@ -237,7 +238,7 @@ def present_stimuli(stimuli, settings):
     # MR scanner
     max_slippage = .5
 
-    # variables
+    # Timing variables
     n_tr = 0
     block = 0
     base1tr = 5
@@ -265,13 +266,13 @@ def present_stimuli(stimuli, settings):
 
     def parse_keys():
         core.wait(.0001, hogCPUperiod=0.00001)
-        now = global_clock.getTime()
         all_keys = event.getKeys()
         new_ntr = n_tr
         new_vol = vol
         newcorrect = cor
         newout = out
         newrl = resp_log
+        now = global_clock.getTime()
         # Log all key preses
         for key in all_keys:
             if key != settings['sync']:
@@ -334,13 +335,13 @@ def present_stimuli(stimuli, settings):
             print 'overdue'
             break
         state, out, resp_log, vol_onsets, n_tr, vol, cor = parse_keys()
-        if state['baseline_start']:
+        if state['baseline_start']:  # Wait a few volumes before first stim
             while n_tr < base1tr:
                 state, out, resp_log, vol_onsets, n_tr, vol, cor = parse_keys()
             n_tr = 0
             state['baseline_start'] = False
             state['playblock'] = True
-        if state['playblock']:
+        if state['playblock']:  # Play stimulus block
             print 'playblock'
             for stimi in range(block*3, (block*3)+3):
                 print settings['stimuli'][stimi]
@@ -357,6 +358,7 @@ def present_stimuli(stimuli, settings):
                     state, out, resp_log, vol_onsets, n_tr, vol, cor = \
                         parse_keys()
                 n_tr = 0
+            # Update state variables
             state['playblock'] = False
             if settings['resp'][block]:
                 print settings['resp'][block]
@@ -366,13 +368,13 @@ def present_stimuli(stimuli, settings):
             else:
                 state['rest'] = True
             block += 1
-        if state['response']:
+        if state['response']:  # Ask subject to respond to probe question
             print 'response'
             # Wait for HRF
-            while n_tr < waithrftr:
+            while n_tr < waithrftr:  # Wait a few volumes before probe
                 state, out, resp_log, vol_onsets, n_tr, vol, cor = parse_keys()
             state['listen_for_resp'] = True
-            # Present task question
+            # Display task question
             n_tr = 0
             resp_text.draw()
             win.flip()
@@ -381,13 +383,14 @@ def present_stimuli(stimuli, settings):
             n_tr = 0
             fixation.draw()
             win.flip()
+            # Update state variables
             state['response'] = False
-            # block will be 3 after the last block of stims have played
+            # block will equal 3 after the last block of stims have played
             if block >= 3:
                 state['baseline_end'] = True
             else:
                 state['rest'] = True
-        if state['rest']:
+        if state['rest']:  # Rest (do nothing) between blocks
             print 'rest'
             while n_tr < resttr:
                 if global_clock.getTime() > duration:
@@ -408,7 +411,7 @@ def present_stimuli(stimuli, settings):
 
             state['responded'] = False
             state['listen_for_resp'] = False
-        if state['baseline_end']:
+        if state['baseline_end']:  # Wait a few volumes at the end of the run
             print 'begin baseline_end'
 #            core.wait(settings['TR']*base2tr, hogCPUperiod=0.2)
             print 'vol %f of %f' % (vol, settings['volumes'])
@@ -440,7 +443,6 @@ def present_stimuli(stimuli, settings):
 #                counter.draw()
 #                win.flip()
 
-    print 'out of while loop'
     out += (u"End of scan (vol 0..%d = %d of %s).\n" %
             (vol - 1, vol, settings['volumes']))
     total_dur = global_clock.getTime()
