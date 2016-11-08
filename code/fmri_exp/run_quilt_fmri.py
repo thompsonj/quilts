@@ -128,10 +128,14 @@ def load_stimuli(settings):
     computations during the presentation of the stimuli.
 
     All stimuli are assumed to be located in the directory 'stimuli' in
-    the parent directory.
+    the present working directory.
 
-    Assumes that the following files are in a directory named [subject]:
-        s[subject_no]_run[run]order.npy
+    Assumes that order info is contained in numpy files in one directory per
+    subject, for example:
+        s1/s1_run1_order.npy
+        s1/s1_run2_order.npy
+        ...
+        s1/s1_run20_order.npy
 
     Parameters
     ----------
@@ -144,11 +148,6 @@ def load_stimuli(settings):
         Sounds to be presented in this run in the order in which they
 
     """
-    # sub = settings['subject']
-    # run = settings['run']
-    # run_info = np.load(path.join(sub, sub + '_run' + str(run) +
-    #                    'order.npy')).item()
-    # fnames = run_info['stimuli']
     fnames = settings['stimuli']
     stimuli = np.array(
         [sound.SoundPyo(f) for f in fnames])
