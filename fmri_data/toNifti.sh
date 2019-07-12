@@ -6,7 +6,8 @@ subj=$3
 sess=$4
 
 ###Create dataset_description.json
-jo -p "Name"="Maastricht 7T Speech Quilts Dataset" "BIDSVersion"="1.0.2" >> ${niidir}/dataset_description.json
+jo -p "Name"="Maastricht 7T Speech Quilts Dataset" "BIDSVersion"="1.0.2" > ${niidir}/dataset_description.json
+datalad add --to-git ${niidir}/dataset_description.json
 
 ####Anatomical Organization####
 ###Create structure
@@ -57,7 +58,7 @@ for files in $(ls sub*); do
 done
 
 # add anat to datalad dataset
-datalad add ses-${sess}/anat
+datalad add "ses-${sess}/anat"
 
 
 ####Functional Organization####
@@ -85,8 +86,8 @@ for ((i=1;i<=${runfiles};i++)); do
   temprunext="${temprun##*.}"
   temprunfile="${temprun%.*}"
   # TR=$(echo $temprun | cut -d '_' -f4) #f4 is the third field delineated by _ to capture the acquisition TR from the filename
-  mv ${temprunfile}.${temprunext} sub-${subj}_ses-${sess}_task-QuiltLanguage_run-${r}_dir-AP_bold.${temprunext}
-  echo "${temprunfile}.${temprunext} changed to sub-${subj}_ses-${sess}_task-Identify_Language_run-${r}_dir-AP_bold.${temprunext}"
+  mv ${temprunfile}.${temprunext} sub-${subj}_ses-${sess}_task-QuiltLanguage_run-${r}_bold.${temprunext}
+  echo "${temprunfile}.${temprunext} changed to sub-${subj}_ses-${sess}_task-Identify_Language_run-${r}_bold.${temprunext}"
 done
 apfiles=$(ls -1 *AP1_cmrr* | wc -l)
 for ((i=1;i<=${apfiles};i++)); do

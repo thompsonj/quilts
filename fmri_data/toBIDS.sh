@@ -3,20 +3,20 @@
 set -e
 
 #### Defining pathways
-toplvl=/data1/quilts/speechQuilts_fMRIdata
+toplvl=/data1/quilts/speechQuiltsfMRIdata
 datalad create $toplvl
 
 dcmdir=/data1/quilts/dicoms
 metadir=/data0/Dropbox/quilts/fmri_exp/stim_order_run_data
 # Create nifti directory
 # mkdir -p ${toplvl}/Nifti
-niidir=${toplvl}/Nifti
+niidir=${toplvl}
 
 for subj in 1 2 3 4 5 6 ; do
-  datalad create -d $toplvl ${toplvl}/Nifti/sub-${subj}
+  datalad create -d $toplvl ${toplvl}/sub-${subj}
 # subj=1
   for sess in 1 2; do
-    datalad create -d $toplvl ${toplvl}/Nifti/sub-${subj}/ses-${sess}
+    datalad create -d $toplvl ${toplvl}/sub-${subj}/ses-${sess}
   # sess=1
     echo "Processing subject $subj session $sess"
 
