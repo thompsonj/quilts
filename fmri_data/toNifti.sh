@@ -64,6 +64,7 @@ datalad add "ses-${sess}/anat"
 ####Functional Organization####
 #Create subject folder
 mkdir -p ${niidir}/sub-${subj}/ses-${sess}/func
+mkdir -p ${niidir}/sub-${subj}/ses-${sess}/fmap
 
 ###Convert dcm to nii
 for direcs in AP1 PA1 run1 run2 run3 run4 run5 run6 run7 run8 run9 run10; do
@@ -89,6 +90,8 @@ for ((i=1;i<=${runfiles};i++)); do
   mv ${temprunfile}.${temprunext} sub-${subj}_ses-${sess}_task-QuiltLanguage_run-${r}_bold.${temprunext}
   echo "${temprunfile}.${temprunext} changed to sub-${subj}_ses-${sess}_task-Identify_Language_run-${r}_bold.${temprunext}"
 done
+
+## Rename reference epis in opposite phase encoding directions
 apfiles=$(ls -1 *AP1_cmrr* | wc -l)
 for ((i=1;i<=${apfiles};i++)); do
   ap=$(ls *AP1_cmrr*) #This is to refresh the Checker variable, same as the Anat case
@@ -96,8 +99,8 @@ for ((i=1;i<=${apfiles};i++)); do
   tempapext="${tempap##*.}"
   tempapfile="${tempap%.*}"
   # TR=$(echo $temprun | cut -d '_' -f4) #f4 is the third field delineated by _ to capture the acquisition TR from the filename
-  mv ${tempapfile}.${tempapext} sub-${subj}_ses-${sess}_task-rest_dir-AP_bold.${tempapext}
-  echo "${tempapfile}.${tempapext} changed to sub-${subj}_ses-${sess}_task-rest_dir-AP_bold.${tempapext}"
+  mv ${tempapfile}.${tempapext} sub-${subj}_ses-${sess}_dir-AP_epi.${tempapext}
+  echo "${tempapfile}.${tempapext} changed to sub-${subj}_ses-${sess}_dir-AP_epi.${tempapext}"
 done
 pafiles=$(ls -1 *PA1_cmrr* | wc -l)
 for ((i=1;i<=${pafiles};i++)); do
@@ -106,26 +109,26 @@ for ((i=1;i<=${pafiles};i++)); do
   temppaext="${temppa##*.}"
   temppafile="${temppa%.*}"
   # TR=$(echo $temprun | cut -d '_' -f4) #f4 is the third field delineated by _ to capture the acquisition TR from the filename
-  mv ${temppafile}.${temppaext} sub-${subj}_ses-${sess}_task-rest_dir-PA_bold.${temppaext}
-  echo "${temppafile}.${temppaext} changed to sub-${subj}_ses-${sess}_task-rest_dir-PA_bold.${temppaext}"
+  mv ${temppafile}.${temppaext} sub-${subj}_ses-${sess}_dir-PA_epi.${temppaext}
+  echo "${temppafile}.${temppaext} changed to sub-${subj}_ses-${sess}_dir-PA_epi.${temppaext}"
 done
 
 
 ###Organize files into folders
 for files in $(ls sub*); do
-Orgfile="${files%.*}"
-Orgext="${files##*.}"
-Modality=$(echo $Orgfile | rev | cut -d '_' -f1 | rev)
-Sessionnum=$(echo $Orgfile | cut -d '_' -f2)
-Difflast=$(echo "${Sessionnum: -1}")
-if [[ $Modality == "bold" && $Difflast == 2 ]]; then
-  mv ${Orgfile}.${Orgext} ses-2/func
-else
-if [[ $Modality == "bold" && $Difflast == 1 ]]; then
-  mv ${Orgfile}.${Orgext} ses-1/func
-fi
-fi
+  Orgfile="${files%.*}"
+  Orgext="${files##*.}"
+  Modality=$(echo $Orgfile | rev | cut -d '_' -f1 | rev)
+
+  if [ $Modality == "bold" ]; then
+    mv ${Orgfile}.${Orgext} ses-${ses}/func
+  else
+  if [ $Modality == "epi" ]; then
+    mv ${Orgfile}.${Orgext} ses-${ses}/fmap
+  fi
+  fi
 done
 
 # Add functional files to datalad dataset
 datalad add "ses-${sess}/func"
+datalad add "ses-${sess}/fmap"
