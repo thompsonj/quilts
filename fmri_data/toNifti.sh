@@ -16,7 +16,7 @@ mkdir -p ${niidir}/sub-${subj}/ses-${sess}/anat
 ###Convert dcm to nii
 #Only convert the Dicom folder anat
 for direc in T1 PD; do
-  dcm2niix -o ${niidir}/sub-${subj} -f ${subj}_%f_%p ${dcmdir}/s0${subj}_sess${sess}/${direc}
+  dcm2niix -o ${niidir}/sub-${subj} -f ${subj}_%f_%p -z y ${dcmdir}/s0${subj}_sess${sess}/${direc}
 done
 
 #Changing directory into the subject folder
