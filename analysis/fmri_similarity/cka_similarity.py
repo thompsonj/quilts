@@ -5,6 +5,7 @@ import sys
 import time
 import pickle
 import pandas
+import multiprocessing as mp
 import numpy as np
 from nistats.hemodynamic_models import glover_hrf
 import matplotlib.pyplot as plt
@@ -26,6 +27,9 @@ FRAME_RATE = 0.020
 LAYERS = ['cnn1', 'cnn2', 'cnn3', 'cnn4', 'cnn5', 'cnn6', 'cnn7', 'cnn8', 'cnn9', 'fc1', 'fc2']
 DIMS = [1024, 256, 256, 128, 128, 128, 64, 64, 64, 600, 190]
 DIMS = {LAYERS[i]:DIMS[i] for i in range(len(LAYERS))}
+# TEST_LAYERS = ['cnn8', 'cnn9']
+# LAYERS=TEST_LAYERS
+ROIS = ['LIC', 'RIC', 'LMGN', 'RMGN']
 SLICE_TIME_REF = 0
 N_EXAMPLES = 609300
 
@@ -51,15 +55,21 @@ class SimilarityMatrix:
             self.sim_mat = np.zeros((self.n_rois, self.n_layers))
 
 
-    def calulate_similarity_matrix(self):
-        for i, roi in enumerate(self.rois):
-            print('ROI: {}'.format(roi))
-            for j, layer in enumerate(LAYERS):
-                print('Layer: {}'.format(layer))
-                self.sim_mat[i, j] = self.run_cka(roi, layer)
-                # Save similarity matrix
-                self.save_sim_mat()
-                self.plot_sim_mat()
+    def calculate_similarity_matrix(self):
+        pool = mp.Pool(mp.cpu_count())
+        rl_pairs = [(i*(self.n_layers) + j, roi, layer) for i, roi in enumerate(self.rois) for j, layer in enumerate(LAYERS)]
+        res_objs = [pool.apply_async(self.run_cka, args=roi_layer) for roi_layer in rl_pairs]
+        # res_objs is a list of pool.ApplyResult objects
+        results = [r.get() for r in res_objs]
+        pool.close()
+        print(results)
+        results.sort(key=lambda x: x[0])
+        results_final = np.array([r for i, r in results])
+        self.sim_mat = np.reshape(results_final, (self.n_rois, self.n_layers))
+
+        # Save similarity matrix
+        self.save_sim_mat()
+        self.plot_sim_mat()
 
 
     def save_sim_mat(self):
@@ -79,14 +89,14 @@ class SimilarityMatrix:
         plt.yticks(np.arange(len(LAYERS)), LAYERS)
         plt.xlabel('Auditory Regions of Interest')
         plt.xticks(np.arange(self.n_rois), self.rois)
-        cbar = fig.colorbar(im)
+        fig.colorbar(im)
         save_file = '{}/sub-{}_model-{}_similarity_matrix.png'.format(self.res_dir,
                                                                       self.subject,
                                                                       self.model.replace('/', '_'))
         plt.savefig(save_file, bbox_inches='tight', dpi=300)
 
 
-    def run_cka(self, roi, layer):
+    def run_cka(self, mp_i, roi, layer):
         # Initialize matrices to avoid growing them in a loop
         act_allruns = np.zeros((N_EXAMPLES, DIMS[layer]))
         roi_size = self.get_roi_size(roi)
@@ -110,11 +120,11 @@ class SimilarityMatrix:
                 #     fmri_1run, act_1run = self.get_X_and_Y_matrices(ses, run, roi, layer)
                 #     fmri_allruns = np.append(fmri_allruns, fmri_1run, axis=0)
                 #     act_allruns = np.append(act_allruns, act_1run, axis=0)
-        print('act_allruns.shape: {}'.format(act_allruns.shape))
-        print('fmri_allruns.shape: {}'.format(fmri_allruns.shape))
+        # print('act_allruns.shape: {}'.format(act_allruns.shape))
+        # print('fmri_allruns.shape: {}'.format(fmri_allruns.shape))
         # Calculate debiased linear Centered Kernel Alignment
         cka_from_features = cka.feature_space_linear_cka(act_allruns, fmri_allruns, debiased=True)
-        return cka_from_features
+        return (mp_i, cka_from_features)
 
 
     def get_roi_size(self, roi):
@@ -122,7 +132,6 @@ class SimilarityMatrix:
         return fmri.shape[1]
 
     def get_X_and_Y_matrices(self, ses, run, roi, layer):
-        """."""
         # Load fmri from one ROI and one run
         fmri = np.load(ROI_FILE.format(self.subject, ses, run, roi))
         # bold = nib.load(bold_file.format(DATA_DIR, sub, ses, run))
@@ -191,15 +200,15 @@ def main():
         print("Usage: cka_similarity.py subject model_name \n e.g. ")
         # e.g. cka_similarity.py 4 enu-enu-freeze/enu-enu-freeze
     else:
-        # rois = ['LIC', 'RIC', 'LMGB', 'RMGB']
-        rois = ['RIC']
+        # rois = ['LIC', 'RIC', 'LMGN', 'RMGN']
+        rois = ROIS
         subject = args[1]
         model = args[2]
         sim_mat = SimilarityMatrix(subject, model, rois, True)
         tic = time.time()
-        sim_mat.calulate_similarity_matrix()
+        sim_mat.calculate_similarity_matrix()
         toc = time.time()
-        print("Calculating sim mat took {} seconds".format(toc - tic))
+        print("Calculating sim mat took {} minutes".format((toc - tic)/60))
 
 if __name__ == '__main__':
     main()
