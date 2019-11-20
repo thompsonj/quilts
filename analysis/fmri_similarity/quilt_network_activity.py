@@ -30,9 +30,10 @@ import time
 import pickle
 import numpy as np
 from scipy.io import loadmat
+import pandas
 
 QUILT_LEN = 59000.0  # each speech quilt is 59 seconds
-FRAME_RATE = 20  # 20 milliseconds
+FRAME_RATE = 20.0  # 20 milliseconds
 N_FRAMES_PER_QUILT = int(QUILT_LEN/FRAME_RATE)
 LAYERS = ['cnn1', 'cnn2', 'cnn3', 'cnn4', 'cnn5', 'cnn6', 'cnn7', 'cnn8', 'cnn9', 'fc1', 'fc2']
 STIM_DIR = '/data0/Dropbox/quilts/fmri_exp/generate_stimuli/'
@@ -46,17 +47,17 @@ OUT_DIR = '/data0/Dropbox/quilts/analysis/fmri_similarity/quilted_activities'
 class Quilter():
 
     def __init__(self, input_lang, model):
-        self.input_lang = input_lang
+        self.in_lang = input_lang
         self.model = model
-        audio_len_file = '/data0/Dropbox/quilts/analysis/fmri_similarity/{}_audio_lengths.pkl'.format(input_lang)
-        with open(audio_len_file, 'rb') as af:
-            self.len_audio = pickle.load(af)
+        audio_len_file = '/data0/Dropbox/quilts/analysis/fmri_similarity/{}_audio_lengths.pkl'
+        with open(audio_len_file.format(input_lang), 'rb') as alf:
+            self.len_audio = pickle.load(alf)
         self.out_dir = '{}/{}/{}'.format(OUT_DIR, input_lang, model)
 
 
     def quilt_all_speakers(self):
         """Given a lanaguage and model, save all activation quilts for all speakers."""
-        with open('{}/{}/selected_speakers.txt'.format(STIM_DIR, self.input_lang), 'r') as fil:
+        with open('{}/{}/selected_speakers.txt'.format(STIM_DIR, self.in_lang), 'r') as fil:
             speakers = [name.split('.')[0] for name in fil.read().splitlines()]
 
         for n_spkr, spkr in enumerate(speakers):
@@ -75,10 +76,10 @@ class Quilter():
         out_file = '{}/{}_quilted.pkl'.format(self.out_dir, speaker)
         if os.path.isfile(out_file):
             return
-        all_act, time_per_frame = self.segment_activations(speaker)
+        all_act = self.segment_activations(speaker)
 
         # Load the order of segments used when generating stimuli quilts
-        mat_file = '{}/{}/quilts/order/{}_60s_order.mat'.format(STIM_DIR, self.input_lang, speaker)
+        mat_file = '{}/{}/quilts/order/{}_60s_order.mat'.format(STIM_DIR, self.in_lang, speaker)
         mat = loadmat(mat_file)
         seg_order = mat['final_seg_order'] - 1  # to correct for MATLAB 1-based indexing
 
@@ -105,45 +106,49 @@ class Quilter():
         """Split network activations into segments according to saved boundaries."""
         all_act = {layer:[] for layer in LAYERS}
         total_frames = 0
-        time_per_frame = []
-        total_segments = 0
-        with open('{}/{}/proposed_utts/{}.txt'.format(STIM_DIR, self.input_lang, speaker), 'r') as fil:
+        total_segs = 0
+        with open('{}/{}/proposed_utts/{}.txt'.format(STIM_DIR, self.in_lang, speaker), 'r') as fil:
             utterance_nos = fil.read().splitlines()
         # Divide the activations into the segments that were used in the speech quilts
         for utt_no in utterance_nos:
-            if speaker=='nrc_ajm' and utt_no == '38':
+            if speaker == 'nrc_ajm' and utt_no == '38':
                 n_segments_38 = 4
                 for layer in LAYERS:
                     segs = [np.empty((1, all_act[layer][0].shape[1])) for i in range(n_segments_38)]
                     all_act[layer] = all_act[layer] + segs
-                total_segments += n_segments_38
-                # print('UTT 38 len([segs]): {}, len(all_act[layer]: {}), total_segments: {}'.format(len([segs]), len(all_act[layer]), total_segments))
+                total_segs += n_segments_38
+                # print('UTT 38 len([segs]): {}, len(all_act[layer]: {}), total_segs: {}'.format(len([segs]), len(all_act[layer]), total_segs))
             else:
                 # print('utterance number:', utt_no)
                 # Load and concatenate network activations
-                act = np.load('{0}/{1}/{2}/{3}/{3}_{4}.npz'.format(ACT_DIR, self.input_lang,
+                act = np.load('{0}/{1}/{2}/{3}/{3}_{4}.npz'.format(ACT_DIR, self.in_lang,
                                                                    self.model, speaker,
                                                                    utt_no))
                 n_frames = act['cnn1'].shape[0]
                 total_frames = total_frames + n_frames
                 # Load and concatenate segmentation info (in ms)
-                seg = np.load('{0}/{1}/seg/{2}/{2}_{3}.npy'.format(STIM_DIR, self.input_lang,
+                seg = np.load('{0}/{1}/seg/{2}/{2}_{3}.npy'.format(STIM_DIR, self.in_lang,
                                                                    speaker, utt_no),
                               encoding='latin1', allow_pickle=True)
                 length_ms = self.len_audio[speaker][utt_no]
-                time_per_frame.append((length_ms)/n_frames)
+                frame_times = np.arange(0, n_frames*FRAME_RATE, FRAME_RATE)
+                
 
                 # Convert ms boundaries to indices into activations
-                phn_start = np.round((seg[()]['phn_start']/length_ms)*n_frames).astype(int)
-                total_segments = total_segments + len(phn_start)
-                phn_end = np.round(seg[()]['phn_end']/length_ms*n_frames).astype(int)
+                phn_start = pandas.to_timedelta(seg[()]['phn_start'], unit='ms')
+                total_segs = total_segs + len(phn_start)
+                phn_end = pandas.to_timedelta(seg[()]['phn_end'], unit='ms')
+                print('Length of audio: {}, Length of features: {}, Latest end: {}'.format(length_ms, frame_times[-1]+20, phn_end.max()))
                 for layer in LAYERS:
-                    segs = [act[layer][start:stop, :] for start, stop in zip(phn_start, phn_end)]
+                    index = pandas.to_timedelta(frame_times, unit='ms')
+                    act_df = pandas.DataFrame(act[layer], index=index)
+                    segs = [act_df[strt:stp].to_numpy() for strt, stp in zip(phn_start, phn_end)]
                     # print('segs[0].shape: {}'.format(segs[0].shape))
                     all_act[layer] = all_act[layer] + segs
-                    # print('len(segs): {}, len(phn_start): {}, len(all_act[layer]: {}), total_segments: {}'.format(len(segs), len(phn_start), len(all_act[layer]), total_segments))
-        assert len(all_act['cnn1']) == total_segments, 'len(all_act[cnn1]):{}, total_segments:{}'.format(len(all_act['cnn1']), total_segments)
-        return all_act, time_per_frame
+
+        assert_str = 'len(all_act[cnn1]):{}, total_segs:{}'.format(len(all_act['cnn1']), total_segs)
+        assert len(all_act['cnn1']) == total_segs, assert_str
+        return all_act
 
 
 def main():
