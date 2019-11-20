@@ -112,6 +112,16 @@ for ((i=1;i<=${pafiles};i++)); do
   mv ${temppafile}.${temppaext} sub-${subj}_ses-${sess}_dir-PA_epi.${temppaext}
   echo "${temppafile}.${temppaext} changed to sub-${subj}_ses-${sess}_dir-PA_epi.${temppaext}"
 done
+jo -p "Intended For"="["ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-1_bold.nii",
+                  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-2_bold.nii",
+		  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-3_bold.nii",
+		  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-4_bold.nii",
+		  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-5_bold.nii",
+		  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-6_bold.nii",
+		  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-7_bold.nii",
+		  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-8_bold.nii",
+	  	  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-9_bold.nii",
+		  "ses-${sess}/func/sub-2_ses-${sess}_task-QuiltLanguage_run-10_bold.nii"]" >> sub-${subj}_ses-${sess}_dir-PA_epi.json
 
 
 ###Organize files into folders
