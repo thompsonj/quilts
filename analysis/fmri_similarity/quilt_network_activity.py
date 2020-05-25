@@ -36,8 +36,10 @@ QUILT_LEN = 59000.0  # each speech quilt is 59 seconds
 FRAME_RATE = 20.0  # 20 milliseconds
 N_FRAMES_PER_QUILT = int(QUILT_LEN/FRAME_RATE)
 LAYERS = ['cnn1', 'cnn2', 'cnn3', 'cnn4', 'cnn5', 'cnn6', 'cnn7', 'cnn8', 'cnn9', 'fc1', 'fc2']
+LAYERS_INPUT = ['input', 'cnn1', 'cnn2', 'cnn3', 'cnn4', 'cnn5', 'cnn6', 'cnn7', 'cnn8', 'cnn9', 'fc1', 'fc2']
 STIM_DIR = '/data0/Dropbox/quilts/fmri_exp/generate_stimuli/'
 ACT_DIR = '/data0/Dropbox/quilts/network_activations'
+INPUT_DIR = '/data0/Dropbox/quilts/models_and_input'
 OUT_DIR = '/data0/Dropbox/quilts/analysis/fmri_similarity/quilted_activities'
 
 # ACT_DIR = {'enu': '/media/jessica/My Book/activations/enu/enu-enu-freeze/enu-enu-freeze',
@@ -74,9 +76,10 @@ class Quilter():
         """Save the 1s quilted network activations for a given speaker, model and language."""
         # Don't redo if the quilt is alredy made
         out_file = '{}/{}_quilted.pkl'.format(self.out_dir, speaker)
-        if os.path.isfile(out_file):
-            return
+        # if os.path.isfile(out_file):
+        #     return
         all_act = self.segment_activations(speaker)
+        all_act['input'] = self.segment_input(speaker)
 
         # Load the order of segments used when generating stimuli quilts
         mat_file = '{}/{}/quilts/order/{}_60s_order.mat'.format(STIM_DIR, self.in_lang, speaker)
@@ -85,21 +88,83 @@ class Quilter():
 
         # Concatenate segments according to the quilt order
         quilted_acts = {}
-        for layer in LAYERS:
+        for layer in LAYERS_INPUT:
             # Initialize with first segment
-            quilted_acts[layer] = all_act[layer][0]
+            quilted_acts[layer] = all_act[layer][seg_order[0][0]]
             print('len(all_act[layer]): {}, max(seg_order[0][1:]): {}'.format(len(all_act[layer]), max(seg_order[0][1:])))
             for i in seg_order[0][1:]:
                 quilted_acts[layer] = np.append(quilted_acts[layer], all_act[layer][i], axis=0)
-        for layer in LAYERS:
+        for layer in LAYERS_INPUT:
             # quilted_acts[layer] = quilted_acts[layer][:int(round(QUILT_LEN/np.mean(time_per_frame))), :]
             quilted_acts[layer] = quilted_acts[layer][:N_FRAMES_PER_QUILT, :]
+            minn = np.min(quilted_acts[layer])
+            if minn < 0:
+                print('min(quilted_acts[{}]): {}'.format(layer, minn))
         # Save the quilted network activations
         if not os.path.isdir(self.out_dir):
             os.makedirs(self.out_dir)
         out_file = '{}/{}_quilted.pkl'.format(self.out_dir, speaker)
         with open(out_file, 'wb') as f:
             pickle.dump(quilted_acts, f, pickle.HIGHEST_PROTOCOL)
+    
+    def add_input_to_quilted_acts(self, speaker):
+        # Load input segments
+        all_input = self.segment_input(speaker)
+        
+        # Load the order of segments used when generating stimuli quilts
+        mat_file = '{}/{}/quilts/order/{}_60s_order.mat'.format(STIM_DIR, self.in_lang, speaker)
+        mat = loadmat(mat_file)
+        seg_order = mat['final_seg_order'] - 1  # to correct for MATLAB 1-based indexing
+        
+        # Load previously saved quilted activations
+        in_file = '{}/{}_quilted.pkl'.format(self.out_dir, speaker)
+        with open(in_file, 'rb') as f:
+            quilted_acts = pickle.load(f)
+        
+        quilted_acts['input'] = all_input[seg_order[0][0]]
+        for i in seg_order[0][1:]:
+            quilted_acts['input'] = np.append(quilted_acts['input'], all_input[i], axis=0)
+        
+        with open(in_file, 'wb') as f:
+            pickle.dump(quilted_acts, f, pickle.HIGHEST_PROTOCOL)
+        
+    
+    def segment_input(self, speaker):
+        all_input = []
+        with open('{}/{}/proposed_utts/{}.txt'.format(STIM_DIR, self.in_lang, speaker), 'r') as fil:
+            utterance_nos = fil.read().splitlines()
+        # Divide the activations into the segments that were used in the speech quilts
+        for utt_no in utterance_nos:
+            if speaker == 'nrc_ajm' and utt_no == '38':
+                n_segments_38 = 4
+                # segs = [np.empty((1, all_input[0].shape[1])) for i in range(n_segments_38)]
+                segs = [np.zeros((1, all_input[0].shape[1])) for i in range(n_segments_38)]
+                all_input = all_input + segs
+            else:
+                input_file = '{0}/{1}/inputs/{2}/{2}_{3}.npy'.format(INPUT_DIR, self.in_lang, speaker, utt_no)
+                # input_file = '/data0/Dropbox/quilts/models_and_input/nld/inputs/nrc_adf0/nrc_adf0_44.npy'
+                # import numpy as np
+                input_feats = np.load(input_file).squeeze()[::2, :]
+                
+                n_frames = input_feats.shape[0]
+                # Load and concatenate segmentation info (in ms)
+                seg = np.load('{0}/{1}/seg/{2}/{2}_{3}.npy'.format(STIM_DIR, self.in_lang,
+                                                                   speaker, utt_no),
+                              encoding='latin1', allow_pickle=True)
+                length_ms = self.len_audio[speaker][utt_no]
+                frame_times = np.arange(0, n_frames*FRAME_RATE, FRAME_RATE)
+                
+                # Convert ms boundaries to indices into activations
+                phn_start = pandas.to_timedelta(seg[()]['phn_start'], unit='ms')
+                phn_end = pandas.to_timedelta(seg[()]['phn_end'], unit='ms')
+                print('Length of audio: {}, Length of features: {}, Latest end: {}'.format(length_ms, frame_times[-1]+20, phn_end.max()))
+                
+                index = pandas.to_timedelta(frame_times, unit='ms')
+                input_df = pandas.DataFrame(input_feats, index=index)
+                segs = [input_df[strt:stp].to_numpy() for strt, stp in zip(phn_start, phn_end)]
+                all_input = all_input + segs
+        print(len(all_input))
+        return all_input
 
 
     def segment_activations(self, speaker):
@@ -114,7 +179,8 @@ class Quilter():
             if speaker == 'nrc_ajm' and utt_no == '38':
                 n_segments_38 = 4
                 for layer in LAYERS:
-                    segs = [np.empty((1, all_act[layer][0].shape[1])) for i in range(n_segments_38)]
+                    # segs = [np.empty((1, all_act[layer][0].shape[1])) for i in range(n_segments_38)]
+                    segs = [np.zeros((1, all_act[layer][0].shape[1])) for i in range(n_segments_38)]
                     all_act[layer] = all_act[layer] + segs
                 total_segs += n_segments_38
                 # print('UTT 38 len([segs]): {}, len(all_act[layer]: {}), total_segs: {}'.format(len([segs]), len(all_act[layer]), total_segs))
@@ -156,7 +222,7 @@ def main():
     args = sys.argv
     if len(args) < 3:
         print("Usage: quilt_network_activity.py input_language model_name")
-        # e.g. quilt_network_activity.py enu enu-enu-freeze/enu-enu-freeze
+        # e.g. python quilt_network_activity.py enu enu-enu-freeze/enu-enu-freeze
     else:
         input_lang = args[1]
         model = args[2]
