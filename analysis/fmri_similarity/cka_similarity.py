@@ -20,8 +20,14 @@ DATA_DIR = '/data1/quilts/speechQuiltsfMRIdata'
 HOME = '/data0/Dropbox/quilts/analysis/fmri_similarity'
 QUILT_DIR = HOME + '/quilted_activities'
 RESULTS_DIR = HOME + '/similarity_matrices'
-# ROI_FILE = DATA_DIR + '/derivatives/nilearn/sub-{0}/ses-{1}/sub-{0}_ses-{1}_task-QuiltLanguage_run-{2}_desc-preproc_bold_{3}.npy'
-ROI_FILE = DATA_DIR + '/derivatives/nilearn/sub-{0}/ses-{1}/sub-{0}_ses-{1}_task-QuiltLanguage_run-{2}_mask-{3}_desc-preproc_bold.npy'
+ACTIVE = False
+SC_ROI_FILE = DATA_DIR + '/derivatives/nilearn/sub-{0}/ses-{1}/sub-{0}_ses-{1}_task-QuiltLanguage_run-{2}_mask-{3}_desc-preproc_bold.npy'
+if ACTIVE:
+    ROI_FILE = DATA_DIR + '/derivatives/nilearn/sub-{0}/ses-{1}/sub-{0}_ses-{1}_task-QuiltLanguage_run-{2}_mask-{3}+active_desc-preproc_bold.npy'
+else:
+    ROI_FILE = DATA_DIR + '/derivatives/nilearn/sub-{0}/ses-{1}/sub-{0}_ses-{1}_task-QuiltLanguage_run-{2}_mask-{3}_desc-preproc_bold.npy'
+    # ROI_FILE = DATA_DIR + '/derivatives/nilearn/sub-{0}/ses-{1}/sub-{0}_ses-{1}_task-QuiltLanguage_run-{2}_desc-preproc_bold_{3}.npy'
+
 EVENTS_FILE = '{0}/sub-{1}/ses-{2}/func/sub-{1}_ses-{2}_task-QuiltLanguage_run-{3}_events.tsv'
 # Constants
 TR = 1.7
@@ -56,7 +62,12 @@ class SimilarityMatrix:
         # Create the results directory if it does not exist
         if not os.path.isdir(self.res_dir):
             os.makedirs(self.res_dir)
-        self.file = '{}/sub-{}_model-{}_similarity_matrix_610980'.format(self.res_dir,
+        if ACTIVE:
+            self.file = '{}/sub-{}_model-{}_similarity_matrix_active'.format(self.res_dir,
+                                                                      self.subject,
+                                                                      self.model.replace('/', '_'))
+        else:
+            self.file = '{}/sub-{}_model-{}_similarity_matrix'.format(self.res_dir,
                                                                       self.subject,
                                                                       self.model.replace('/', '_'))
         self.shuffle = False
@@ -360,7 +371,10 @@ class SimilarityMatrix:
     
     def get_fmri_matrix_per_run(self, ses, run, roi):
         # Load fmri from one ROI and one run
-        fmri_file = ROI_FILE.format(self.subject, ses, run, roi)
+        if roi in ['CN', 'SOC', 'IC', 'MGN']:
+            fmri_file = SC_ROI_FILE.format(self.subject, ses, run, roi)
+        else:
+            fmri_file = ROI_FILE.format(self.subject, ses, run, roi)
         print('Loading from {}...'.format(fmri_file))
         fmri = np.load(fmri_file)
         # bold = nib.load(bold_file.format(DATA_DIR, sub, ses, run))
@@ -490,18 +504,32 @@ class SimilarityMatrix:
         plt.xticks(np.arange(self.n_rois), self.rois, rotation='vertical')
         plt.title('{} sub-{}'.format(self.model.split('/')[0], self.subject))
         fig.colorbar(im)
-        if self.shuffle:
-            save_file = '{}/sub-{}_model-{}_similarity_matrix_shuffle.png'.format(self.res_dir,
-                                                                          self.subject,
-                                                                          self.model.replace('/', '_'))
-        elif self.shuffle_run:
-            save_file = '{}/sub-{}_model-{}_similarity_matrix_shuffle_run.png'.format(self.res_dir,
+        if ACTIVE:
+            if self.shuffle:
+                save_file = '{}/sub-{}_model-{}_similarity_matrix_active_shuffle.png'.format(self.res_dir,
+                                                                              self.subject,
+                                                                              self.model.replace('/', '_'))
+            elif self.shuffle_run:
+                save_file = '{}/sub-{}_model-{}_similarity_matrix_active_shuffle_run.png'.format(self.res_dir,
+                                                                              self.subject,
+                                                                              self.model.replace('/', '_'))
+            else:
+                save_file = '{}/sub-{}_model-{}_similarity_active_matrix.png'.format(self.res_dir,
                                                                           self.subject,
                                                                           self.model.replace('/', '_'))
         else:
-            save_file = '{}/sub-{}_model-{}_similarity_matrix.png'.format(self.res_dir,
-                                                                      self.subject,
-                                                                      self.model.replace('/', '_'))
+            if self.shuffle:
+                save_file = '{}/sub-{}_model-{}_similarity_matrix_shuffle.png'.format(self.res_dir,
+                                                                              self.subject,
+                                                                              self.model.replace('/', '_'))
+            elif self.shuffle_run:
+                save_file = '{}/sub-{}_model-{}_similarity_matrix_shuffle_run.png'.format(self.res_dir,
+                                                                              self.subject,
+                                                                              self.model.replace('/', '_'))
+            else:
+                save_file = '{}/sub-{}_model-{}_similarity_matrix.png'.format(self.res_dir,
+                                                                          self.subject,
+                                                                          self.model.replace('/', '_'))
         plt.savefig(save_file, bbox_inches='tight', dpi=300)
 
 
@@ -541,7 +569,10 @@ class SimilarityMatrix:
     #     return act_allruns, fmri_allruns
         
     def get_roi_size(self, roi):
-        fmri = np.load(ROI_FILE.format(self.subject, 1, 1, roi))
+        if roi in ['CN', 'SOC', 'IC', 'MGN']:
+            fmri = np.load(SC_ROI_FILE.format(self.subject, 1, 1, roi))
+        else:
+            fmri = np.load(ROI_FILE.format(self.subject, 1, 1, roi))
         size = fmri.shape[1]
         return size
 
@@ -571,68 +602,68 @@ class SimilarityMatrix:
         print('New ROIs to run CKA on: {}'.format(self.new_rois))
         
 
-    def get_matrices_per_run(self, ses, run, roi, layer):
-        # Load fmri from one ROI and one run
-        fmri = np.load(ROI_FILE.format(self.subject, ses, run, roi))
-        # bold = nib.load(bold_file.format(DATA_DIR, sub, ses, run))
-        # Resample to 20ms sample rate
-        n_scan = fmri.shape[0]
-        start_time = SLICE_TIME_REF * TR
-        # end_time = (n_scan - 1 + SLICE_TIME_REF) * TR
-        end_time = ((n_scan + SLICE_TIME_REF) * TR) - .02 # subtract one frame rather than one TR: 
-        frame_times = np.linspace(start_time, end_time, n_scan)
-        len(frame_times)
-        fmri_df = pandas.DataFrame(fmri, index=pandas.to_timedelta(frame_times, unit='s'))
-        fmri_df_20 = fmri_df.resample('20ms').pad()
-        len(fmri_df_20 )
-        n_rows = len(fmri_df_20)
-        # Load events file
-        events = pandas.read_csv(EVENTS_FILE.format(DATA_DIR, self.subject, ses, run), sep='\t')
-        events['onset'] = pandas.to_timedelta(events['onset'], unit='s')
-        events['duration'] = pandas.to_timedelta(events['duration'], unit='s')
-        # Get the event info for all runs (what stimuli were played when)
-        langs = [x.split('/')[1] for x in events['stim_file']]
-        spkrs = [x.split('/')[-1].split('_60s')[0] for x in events['stim_file']]
-
-        # Load quilted activations
-        n_stim = len(spkrs)
-        assert n_stim == 9
-        quilted_acts = {'enu':{}, 'deu':{}, 'nld':{}}
-        for stim in range(n_stim):
-            quilt_file = '{}/{}/{}/{}_quilted.pkl'.format(QUILT_DIR, langs[stim],
-                                                          self.model, spkrs[stim])
-            with open(quilt_file, 'rb') as qfile:
-                quilted_acts[langs[stim]][spkrs[stim]] = pickle.load(qfile)
-
-        # Assemble quilted activations in dataframe of same length as fmri
-        # layer = 'cnn9'
-        dim = quilted_acts[langs[0]][spkrs[0]][layer].shape[1]
-        activities = pandas.DataFrame(np.zeros((n_rows, dim)), index=fmri_df_20.index)
-        for stim in range(n_stim):
-            onset = events['onset'][stim]
-            len_acts = quilted_acts[langs[stim]][spkrs[stim]][layer].shape[0]
-            offset = onset + pandas.to_timedelta(.020*len_acts, unit='s')
-            len1 = activities[onset:offset].shape[0]
-            len2 = quilted_acts[langs[stim]][spkrs[stim]][layer].shape[0]
-            while len1 > len2:
-                offset -= pandas.to_timedelta(0.005, unit='s')
-                len1 = activities[onset:offset].shape[0]
-            # print('len1: {}, len2: {}'.format(len1, len2))
-            activities[onset:offset] = quilted_acts[langs[stim]][spkrs[stim]][layer]
-            len(activities)
-            # Apply HRF to activations
-            hrf = glover_hrf(FRAME_RATE, oversampling=1, time_length=32., onset=0.)
-            # plt.plot(hrf)
-            # plt.plot(activities[0])
-            activities_hrf = activities.apply(np.convolve, args=(hrf,), axis=0)
-            len(activities_hrf)
-            X = fmri_df_20.to_numpy()
-            Y = activities_hrf.to_numpy()
-            Y = Y[:X.shape[0], :]
-            # X.shape
-            # Y.shape
-        # plt.plot(activities_hrf[0])
-        return X, Y
+    # def get_matrices_per_run(self, ses, run, roi, layer):
+    #     # Load fmri from one ROI and one run
+    #     fmri = np.load(ROI_FILE.format(self.subject, ses, run, roi))
+    #     # bold = nib.load(bold_file.format(DATA_DIR, sub, ses, run))
+    #     # Resample to 20ms sample rate
+    #     n_scan = fmri.shape[0]
+    #     start_time = SLICE_TIME_REF * TR
+    #     # end_time = (n_scan - 1 + SLICE_TIME_REF) * TR
+    #     end_time = ((n_scan + SLICE_TIME_REF) * TR) - .02 # subtract one frame rather than one TR: 
+    #     frame_times = np.linspace(start_time, end_time, n_scan)
+    #     len(frame_times)
+    #     fmri_df = pandas.DataFrame(fmri, index=pandas.to_timedelta(frame_times, unit='s'))
+    #     fmri_df_20 = fmri_df.resample('20ms').pad()
+    #     len(fmri_df_20 )
+    #     n_rows = len(fmri_df_20)
+    #     # Load events file
+    #     events = pandas.read_csv(EVENTS_FILE.format(DATA_DIR, self.subject, ses, run), sep='\t')
+    #     events['onset'] = pandas.to_timedelta(events['onset'], unit='s')
+    #     events['duration'] = pandas.to_timedelta(events['duration'], unit='s')
+    #     # Get the event info for all runs (what stimuli were played when)
+    #     langs = [x.split('/')[1] for x in events['stim_file']]
+    #     spkrs = [x.split('/')[-1].split('_60s')[0] for x in events['stim_file']]
+    # 
+    #     # Load quilted activations
+    #     n_stim = len(spkrs)
+    #     assert n_stim == 9
+    #     quilted_acts = {'enu':{}, 'deu':{}, 'nld':{}}
+    #     for stim in range(n_stim):
+    #         quilt_file = '{}/{}/{}/{}_quilted.pkl'.format(QUILT_DIR, langs[stim],
+    #                                                       self.model, spkrs[stim])
+    #         with open(quilt_file, 'rb') as qfile:
+    #             quilted_acts[langs[stim]][spkrs[stim]] = pickle.load(qfile)
+    # 
+    #     # Assemble quilted activations in dataframe of same length as fmri
+    #     # layer = 'cnn9'
+    #     dim = quilted_acts[langs[0]][spkrs[0]][layer].shape[1]
+    #     activities = pandas.DataFrame(np.zeros((n_rows, dim)), index=fmri_df_20.index)
+    #     for stim in range(n_stim):
+    #         onset = events['onset'][stim]
+    #         len_acts = quilted_acts[langs[stim]][spkrs[stim]][layer].shape[0]
+    #         offset = onset + pandas.to_timedelta(.020*len_acts, unit='s')
+    #         len1 = activities[onset:offset].shape[0]
+    #         len2 = quilted_acts[langs[stim]][spkrs[stim]][layer].shape[0]
+    #         while len1 > len2:
+    #             offset -= pandas.to_timedelta(0.005, unit='s')
+    #             len1 = activities[onset:offset].shape[0]
+    #         # print('len1: {}, len2: {}'.format(len1, len2))
+    #         activities[onset:offset] = quilted_acts[langs[stim]][spkrs[stim]][layer]
+    #         len(activities)
+    #         # Apply HRF to activations
+    #         hrf = glover_hrf(FRAME_RATE, oversampling=1, time_length=32., onset=0.)
+    #         # plt.plot(hrf)
+    #         # plt.plot(activities[0])
+    #         activities_hrf = activities.apply(np.convolve, args=(hrf,), axis=0)
+    #         len(activities_hrf)
+    #         X = fmri_df_20.to_numpy()
+    #         Y = activities_hrf.to_numpy()
+    #         Y = Y[:X.shape[0], :]
+    #         # X.shape
+    #         # Y.shape
+    #     # plt.plot(activities_hrf[0])
+    #     return X, Y
 
 def main():
     """Process input arguments and call quilter."""
