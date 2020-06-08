@@ -22,10 +22,12 @@ simmats_sh_run = {sub:{} for sub in subject_lang}
 untrained = {}
 rand_acts = {}
 full_rand = {}
-in_specifier = 'active'
-out_specifier = 'active_range_per_sub'
+# in_specifier = 'active'
+# out_specifier = 'active_range_per_sub'
 # in_specifier = '610980'
 # out_specifier = '610980_active_range_per_sub'
+in_specifier = 'stim_only'
+out_specifier = 'stim_only'
 
 def update_range(min_, max_):
     if min_ < minval[sub]:
@@ -34,6 +36,7 @@ def update_range(min_, max_):
         maxval[sub] = max_
 
 for sub in subject_lang:
+    sub = 1
 # base1_file = 'fmri_similarity/similarity_matrices/sub-4/untrained/sub-4_model-untrained_untrained_similarity_matrix.pickle'
 # with open(base1_file, 'rb') as bsfl:
 #     base1 = pickle.load(bsfl)
@@ -86,7 +89,7 @@ for sub in subject_lang:
             maxval[sub] = mat_sh_run.max()
 
 # for sub in subject_lang:
-for sub in [5]:
+for sub in [1]:
     # base1_file = home + 'sub-{0}/untrained/sub-{0}_model-untrained_untrained_similarity_matrix_610980.npy'.format(sub)
     # base = np.load(base1_file)
     # base2_file = home + 'sub-{0}/random_features/sub-{0}_model-random_features_similarity_matrix_610980.npy'.format(sub)

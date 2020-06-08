@@ -44,7 +44,10 @@ ROI_ORDER = ['LCN', 'RCN', 'LSOC', 'RSOC', 'LIC', 'RIC', 'LMGN', 'RMGN', 'HG', '
 MERGED_ROI_ORDER = ['CN', 'SOC', 'IC', 'MGN', 'HG', 'PP', 'PT', 'STGa', 'STGp']
 SLICE_TIME_REF = 0
 # N_EXAMPLES = 609300
-N_EXAMPLES = 610980
+# N_EXAMPLES = 610980
+# N_EXAMPLES = 516000 # stim only
+N_EXAMPLES = 515940 # stim only -1
+BLOCK_LEN = 8599#8600
 
 
 
@@ -55,7 +58,7 @@ class SimilarityMatrix:
     '''
 
     def __init__(self, subject, model, rois, shuffle, specifier=None):
-        """Loads the saved SimilarityMatrix object if it exists and overwrite is not True. 
+        """Loads the saved SimilarityMatrix object if it exists and overwrite is not True.
         Otherwise initializes a set of variables associated with the preparation of a single similarity matrix.
         """
 
@@ -286,27 +289,33 @@ class SimilarityMatrix:
     def load_data(self):
         tic = time.time()
         indexes = {1:{}, 2:{}}
+
         # FMRI
         print('Loading fMRI...')
         for roi in self.new_rois:
-            if self.model == 'random':
-                # print('self.model is "random"')
-                self.fmri_activities[roi] = np.random.rand(N_EXAMPLES, self.roi_sizes[roi])
-            else:
-                # Fill matrices with concatenated activities from all 20 runs
-                start = 0
-                for ses in [1, 2]:
-                    for run in range(1, 11):
-                        events = self.get_events(ses, run)
-                        fmri_1run, indexes[ses][run] = self.get_fmri_matrix_per_run(ses, run, roi, events)
+            start = 0
+            for ses in [1, 2]:
+                for run in range(1, 11):
+                    if self.model == 'random':
+                        # print('self.model is "random"')
+                        self.fmri_activities[roi] = np.random.rand(N_EXAMPLES, self.roi_sizes[roi])
+                    else:
+                        # Fill matrices with concatenated activities from all 20 runs
+                         # Load data and put in DataFrame
+                        fmri_df_20 = self.load_fmri(ses, run, roi)
+                        # Prepare events DataFrame containing onsets and offsets
+                        events = self.get_events(ses, run, fmri_df_20.index)
+                        # Get the numpy matrix of to-be-analyzed activity
+                        fmri_1run, indexes[ses][run] = self.get_fmri_matrix_per_run(fmri_df_20, events)
                         # print('Preparing matrices took {} seconds.'.format(toc - tic))
                         len_this_run = fmri_1run.shape[0]
+                        # print(f'ses:{ses}, run:{run}, fmri size:{len_this_run}')
+                        
                         end = start + len_this_run
                         self.fmri_activities[roi][start:end, :] = fmri_1run
                         start += len_this_run
             if end < self.fmri_activities[roi].shape[0] - 1:
                 self.fmri_activities[roi] = self.fmri_activities[roi][:end, :]
-
 
         # CNN
         print('Loading CNN activations...')
@@ -316,16 +325,16 @@ class SimilarityMatrix:
             # print('self.model is "random"')
             self.network_activities = {layer:np.random.rand(N_EXAMPLES, self.layer_sizes[layer]) for layer in LAYERS}
         else:
-            act_file = '{}/design_matrices/{}/{}_convolved'
+            act_file = '{}/design_matrices/{}/sub-{}/{}_convolved'
             if self.specifier:
                 act_file = act_file + '_' + self.specifier
             if self.shuffle_run:
                 act_file = act_file + '_shuffle_run'
             act_file = act_file + '.npy'
-            if os.path.isfile(act_file.format(QUILT_DIR, self.model, 'input')):  # Load matrix if it exists
+            if os.path.isfile(act_file.format(QUILT_DIR, self.model, self.subject, 'cnn1')):  # Load matrix if it exists
                 print('Loading previously saved convolved activations...')
                 for layer in LAYERS:
-                    self.network_activities[layer] = np.load(act_file.format(QUILT_DIR, self.model, layer))
+                    self.network_activities[layer] = np.load(act_file.format(QUILT_DIR, self.model, self.subject, layer))
                     # Shuffle frames if random permutation baseline model
                     if self.shuffle:
                         print('Shuffling...')
@@ -334,24 +343,28 @@ class SimilarityMatrix:
                         self.network_activities[layer] = self.network_activities[layer][idx, :]
             else:  # Otherwise prepare activations matrixs
                 # Fill matrices with concatenated activities from all 20 runs
-                for layer in LAYERS:
-                    start = 0
-                    for ses in [1, 2]:
-                        print('Session: {}'.format(ses))
-                        for run in range(1, 11):
-                            print('Run: {}'.format(run))
-                            events = self.get_events(ses, run)  
-                            act_1run = self.get_cnn_matrix_per_run(ses, run, indexes[ses][run], events)
-                            # print('Preparing matrices took {} seconds.'.format(toc - tic))
-                            len_this_run = act_1run['input'].shape[0]
-                            end = start + len_this_run
+                start = 0
+                for ses in [1, 2]:
+                    print('Session: {}'.format(ses))
+                    for run in range(1, 11):
+                        print('Run: {}'.format(run))
+                        events = self.get_events(ses, run, indexes[ses][run])  
+                        act_1run = self.get_cnn_matrix_per_run(ses, run, indexes[ses][run], events)
+                        # print('Preparing matrices took {} seconds.'.format(toc - tic))
+                        len_this_run = act_1run['input'].shape[0]
+                        end = start + len_this_run
+                        for layer in LAYERS:
+                            print(f'Layer:{layer}')
                             self.network_activities[layer][start:end, :] = act_1run[layer]
+                        # print(f'ses:{ses}, run:{run}, cnn size:{len_this_run}')
                         start += len_this_run
                     # cutoff the end if necessary
-                    if end < self.network_activities[layer].shape[0] - 1:
-                        self.network_activities[layer] = self.network_activities[layer][:end, :]
-                        
-                for layer in LAYERS:
+                if end < self.network_activities[layer].shape[0] - 1:
+                    print(f'end:{end}, self.network_activities[layer].shape:{self.network_activities[layer].shape}')
+                    self.network_activities[layer] = self.network_activities[layer][:end, :]
+                    assert self.network_activities[layer].shape[0] == self.fmri_activities[roi].shape[0]
+                    
+                for layer in LAYERS: ## This happens in a second loop because the layer size will change?
                     # Remove any dead units, if present
                     n_units = self.network_activities[layer].shape[1]
                     zero = [not bool(np.count_nonzero(self.network_activities[layer][:, i])) for i in range(n_units)]
@@ -367,10 +380,10 @@ class SimilarityMatrix:
                         np.random.shuffle(idx)
                         self.network_activities[layer] = self.network_activities[layer][idx, :]
                     # Save activations matrix
-                    outdir = '{}/design_matrices/{}'.format(QUILT_DIR, self.model)
+                    outdir = '{}/design_matrices/{}/sub-{}'.format(QUILT_DIR, self.model, self.subject)
                     if not os.path.isdir(outdir):
                         os.makedirs(outdir)
-                    outfile = act_file.format(QUILT_DIR, self.model, layer)
+                    outfile = act_file.format(QUILT_DIR, self.model, self.subject, layer)
                     if self.shuffle: # probably move this up to the other act_file handling
                         outfile = outfile + '_shuffle'
                     print("Saving {}".format(outfile))
@@ -385,19 +398,20 @@ class SimilarityMatrix:
             self.fmri_activities[roi] = self.fmri_activities[roi] - self.fmri_activities[roi].mean(axis=0, keepdims=True)
 
 
-    def get_events(self, ses, run):
+    def get_events(self, ses, run, index):
         events = pandas.read_csv(EVENTS_FILE.format(DATA_DIR, self.subject, ses, run), sep='\t')
         events['onset'] = pandas.to_timedelta(events['onset'], unit='s')
         events['duration'] = pandas.to_timedelta(events['duration'], unit='s')
         events['offset'] = events['onset'] + events['duration']
         n_stim = 9
-        mock_n_scan = 400
-        start_time = SLICE_TIME_REF * TR
-        # end_time = (n_scan - 1 + SLICE_TIME_REF) * TR
-        end_time = ((mock_n_scan + SLICE_TIME_REF) * TR) - 0.02
-        frame_times = np.linspace(start_time, end_time, mock_n_scan)
-        mock_df = pandas.DataFrame(index=pandas.to_timedelta(frame_times, unit='s'))
-        mock_df = mock_df.resample('20ms').pad()
+        # mock_n_scan = 400
+        # start_time = SLICE_TIME_REF * TR
+        # # end_time = (n_scan - 1 + SLICE_TIME_REF) * TR
+        # end_time = ((mock_n_scan + SLICE_TIME_REF) * TR) - 0.02
+        # frame_times = np.linspace(start_time, end_time, mock_n_scan)
+        # mock_df = pandas.DataFrame(index=pandas.to_timedelta(frame_times, unit='s'))
+        # mock_df = mock_df.resample('20ms').pad()
+        mock_df = pandas.DataFrame(index=index)
         for stim in range(n_stim):
             onset = events['onset'][stim]
             offset = onset + pandas.to_timedelta(.020*N_FRAMES_PER_QUILT, unit='s')
@@ -414,14 +428,14 @@ class SimilarityMatrix:
                 len1 = mock_df[onset:offset].shape[0]
             events['offset'][stim] = offset
         return events
-                        
-    def get_fmri_matrix_per_run(self, ses, run, roi, events):
+
+    def load_fmri(self, ses, run, roi):
         # Load fmri from one ROI and one run
         if roi in ['CN', 'SOC', 'IC', 'MGN']:
             fmri_file = SC_ROI_FILE.format(self.subject, ses, run, roi)
         else:
             fmri_file = ROI_FILE.format(self.subject, ses, run, roi)
-        print('Loading from {}...'.format(fmri_file))
+        # print('Loading from {}...'.format(fmri_file))
         fmri = np.load(fmri_file)
         # bold = nib.load(bold_file.format(DATA_DIR, sub, ses, run))
         # Resample to 20ms sample rate
@@ -433,12 +447,14 @@ class SimilarityMatrix:
         # len(frame_times)
         fmri_df = pandas.DataFrame(fmri, index=pandas.to_timedelta(frame_times, unit='s'))
         fmri_df_20 = fmri_df.resample('20ms').pad()
-
+        return fmri_df_20
+                
+    def get_fmri_matrix_per_run(self, fmri_df_20, events):
         # Cut out just the time points corresponding to auditory stimulation
         block0 = fmri_df_20[events['onset'][0] + pandas.to_timedelta(6, unit='s'):events['offset'][2]].to_numpy()
         block1 = fmri_df_20[events['onset'][3] + pandas.to_timedelta(6, unit='s'):events['offset'][5]].to_numpy()
         block2 = fmri_df_20[events['onset'][6] + pandas.to_timedelta(6, unit='s'):events['offset'][8]].to_numpy()
-        X = np.concatenate([block0, block1, block2], axis=0)
+        X = np.concatenate([block0[:BLOCK_LEN, :], block1[:BLOCK_LEN, :], block2[:BLOCK_LEN, :]], axis=0)
         # X = fmri_df_20.to_numpy()
         return X, fmri_df_20.index
         
@@ -514,9 +530,9 @@ class SimilarityMatrix:
             for stim in range(n_stim):
                 minn = np.min(quilted_acts[langs[stim]][spkrs[stim]][layer])
                 maxx = np.max(quilted_acts[langs[stim]][spkrs[stim]][layer])
-                if minn != 0.0:
-                    print('quilt {} {} {} min: {}'.format(langs[stim], spkrs[stim], layer, minn))
-                print('quilt {} {} {} max: {}'.format(langs[stim], spkrs[stim], layer, maxx))
+                # if minn != 0.0:
+                    # print('quilt {} {} {} min: {}'.format(langs[stim], spkrs[stim], layer, minn))
+                # print('quilt {} {} {} max: {}'.format(langs[stim], spkrs[stim], layer, maxx))
                 onset = events['onset'][stim]
                 offset = events['offset'][stim]
                 activities[onset:offset] = quilted_acts[langs[stim]][spkrs[stim]][layer]
@@ -539,18 +555,18 @@ class SimilarityMatrix:
             block0 = activities_hrf[events['onset'][0] + pandas.to_timedelta(6, unit='s'):events['offset'][2]].to_numpy()
             block1 = activities_hrf[events['onset'][3] + pandas.to_timedelta(6, unit='s'):events['offset'][5]].to_numpy()
             block2 = activities_hrf[events['onset'][6] + pandas.to_timedelta(6, unit='s'):events['offset'][8]].to_numpy()
-            Y = np.concatenate([block0, block1, block2], axis=0)
+            Y = np.concatenate([block0[:BLOCK_LEN, :], block1[:BLOCK_LEN, :], block2[:BLOCK_LEN, :]], axis=0)
 
             # Y = activities_hrf.to_numpy()
-            print('Y convolved min layer-{} ses-{} run-{} min: {}'.format(layer, ses, run, np.min(Y)))
+            # print('Y convolved min layer-{} ses-{} run-{} min: {}'.format(layer, ses, run, np.min(Y)))
 
             # matrices[layer] = Y[:n_rows, :]
             matrices[layer] = Y
-
+    
 
         return matrices
-        
-    
+
+
     def save_sim_mat(self):
         
         col = 0
