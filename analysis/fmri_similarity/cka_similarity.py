@@ -10,6 +10,7 @@ import numpy as np
 from nistats.hemodynamic_models import glover_hrf
 import matplotlib.pyplot as plt
 from scipy.stats import describe
+from argparse import ArgumentParser
 # from scipy.stats import norm
 # import nibabel as nib
 import cka  # Simon Kornblith's colab 
@@ -50,16 +51,35 @@ N_EXAMPLES = 515940 # stim only -1
 BLOCK_LEN = 8599#8600
 
 
-
-
 class SimilarityMatrix:
     '''
-    The SimilarityMatrix object calculates a CKA similarity matrix for a particular subject and model.
+    Calculates a CKA similarity matrix for a particular subject and model.
     '''
 
-    def __init__(self, subject, model, rois, shuffle, specifier=None):
-        """Loads the saved SimilarityMatrix object if it exists and overwrite is not True.
-        Otherwise initializes a set of variables associated with the preparation of a single similarity matrix.
+    def __init__(self, subject, model, rois, shuffle=None, specifier=None):
+        """Initialize SimilarityMatrix object.
+
+        Parameters
+        ----------
+        subject : str
+            Subject identifier. A numeral 1--6
+        model : str
+            Network model identifier e.g. 'enu-enu-freeze/enu-enu-freeze' or 
+            'enu-deu-freeze/enu-deu-freeze'.
+        rois : list of str
+            One or more ROI identifiers 
+            e.g. ['CN', 'SOC', 'IC', 'MGN', 'HG', 'PP', 'PT', 'STGa']
+        shuffle : str (Default None)
+            Which type of random permutation to perform. 'shuffle' to permute
+            all time points. 'shuffle_run' to permute only within a run.
+        specifier : str (Default None)
+            Additional specifier string to distinguish different analysis
+            variations.
+
+        Returns
+        -------
+        None
+
         """
 
         self.model = model
@@ -108,19 +128,26 @@ class SimilarityMatrix:
     
     def __getstate__(self):
         state = self.__dict__.copy()
-        # Don't pickle baz
+        # Don't pickle the data
         del state["network_activities"]
         del state["fmri_activities"]
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        # Add baz back since it doesn't exist in the pickle
+        # Add data back since it doesn't exist in the pickle
         self.network_activities = {layer:np.zeros((N_EXAMPLES, self.layer_sizes[layer])) for layer in LAYERS}
         self.fmri_activities = {roi:np.zeros((N_EXAMPLES, self.roi_sizes[roi])) for roi in self.new_rois}
 
 
     def calculate_similarity_matrix(self):
+        """Call Simon Kornblith's CKA function for all new roi-layer pairs.
+
+        Returns
+        -------
+        None
+
+        """
 
         # Load all data
         self.load_data()
@@ -764,59 +791,80 @@ class SimilarityMatrix:
 
 def main():
     """Process input arguments and call quilter."""
-    args = sys.argv
-    if len(args) < 3:
-        print("Usage: cka_similarity.py subject model_name \n e.g. ")
-        # e.g. python cka_similarity.py 4 enu-enu-freeze/enu-enu-freeze [CN,SOC,IC,MGN,HG,PP,PT,STGa]
-    else:
-        # rois = ['LIC', 'RIC', 'LMGN', 'RMGN']
-        subject = args[1]
-        model = args[2]
-        rois = args[3].strip('[]').replace(" ", "").split(',')
-        print('rois in main: {}'.format(rois))
-        overwrite = False
-        shuffle = None
-        if len(args) > 4:
-            if 'overwrite' in args:
-                overwrite = True
-            if 'shuffle' in args:
-                print('Shuffle')
-                shuffle = 'shuffle'
-            if 'shuffle_run' in args:
-                print('Shuffle_run')
-                shuffle = 'shuffle_run'
-            if args[4] == 'True':
-                overwrite = True
-        specifier = 'stim_only'
+    # Set input arguments
+    parser = ArgumentParser(description='Calculate CKA similiarity matrix for one convnet and one human subject.')
+    # Positional arguments
+    parser.add_argument("subject", help="<Required> Subject identifier. A numeral 1--6")
+    parser.add_argument("model", help="<Required> Network model identifier e.g. enu-enu-freeze/enu-enu-freeze or enu-deu-freeze/enu-deu-freeze")
+    parser.add_argument("rois", nargs='+', help="<Required> One or more ROI identifiers e.g. CN SOC IC MGN HG PP PT STGa")
+    # Optional arguments
+    parser.add_argument("-o", "--overwrite",
+                        help='Whether to overwrite previously saved SimilarityMatrix, if it exists.',
+                        dest="overwrite", action='store_true')
+    parser.add_argument("-s", "--shuffle", type=str,
+                        help="Which type of random permutation to perform. 'shuffle' to permute all time points. 'shuffle_run' to permute only within a run.", 
+                        dest="shuffle",
+                        default=None)
+    parser.add_argument("-p", "--specifier", type=str,
+                        help="Additional specifier string to distinguish different analysis variations.",
+                        dest="specifier",
+                        default=None)
+    args = parser.parse_args()
+    
+    print(args)
+    # args = sys.argv
+    # if len(args) < 3:
+    #     print("Usage: cka_similarity.py subject model_name \n e.g. ")
+    #     # e.g. python cka_similarity.py 4 enu-enu-freeze/enu-enu-freeze [CN,SOC,IC,MGN,HG,PP,PT,STGa]
+    # else:
+    #     # rois = ['LIC', 'RIC', 'LMGN', 'RMGN']
+    #     subject = args[1]
+    #     model = args[2]
+    #     rois = args[3].strip('[]').replace(" ", "").split(',')
+    #     print('rois in main: {}'.format(rois))
+    #     overwrite = False
+    #     shuffle = None
+    #     if len(args) > 4:
+    #         if 'overwrite' in args:
+    #             overwrite = True
+    #         if 'shuffle' in args:
+    #             print('Shuffle')
+    #             shuffle = 'shuffle'
+    #         if 'shuffle_run' in args:
+    #             print('Shuffle_run')
+    #             shuffle = 'shuffle_run'
+    #         if args[4] == 'True':
+    #             overwrite = True
+    #     specifier = 'stim_only'
 
-        sim_mat = SimilarityMatrix(subject, model, rois, shuffle, specifier)
-        
-        # Load previously saved SimilarityMatrix if it exists
-        infile = sim_mat.file + '.pickle'
-        if os.path.isfile(infile) and not overwrite:
-            print("Loading SimilarityMatrix instance from {}".format(infile))
-            with open(infile, 'rb') as pkl:
-                sim_mat = pickle.load(pkl)
-            sim_mat.update_rois(rois)
-            print('Number of new ROIS: {}'.format(len(sim_mat.new_rois)))
-            if len(sim_mat.new_rois) == 0:
-                sim_mat.save_sim_mat()
-                sim_mat.plot_sim_mat()
-                return
+    sim_mat = SimilarityMatrix(args.subject, args.model, args.rois, args.shuffle, args.specifier)
+    
+    # Load previously saved SimilarityMatrix if it exists
+    infile = sim_mat.file + '.pickle'
+    if os.path.isfile(infile) and not args.overwrite:
+        print("Loading SimilarityMatrix instance from {}".format(infile))
+        with open(infile, 'rb') as pkl:
+            sim_mat = pickle.load(pkl)
+        sim_mat.update_rois(rois)
+        print('Number of new ROIS: {}'.format(len(sim_mat.new_rois)))
+        if len(sim_mat.new_rois) == 0:
+            sim_mat.save_sim_mat()
+            sim_mat.plot_sim_mat()
+            return
 
-        # Calculate similarity matrix: run cka for all roi-layer pairs
-        tic = time.time()
-        sim_mat.calculate_similarity_matrix()
-        toc = time.time()
-        print("Calculating sim mat took {} minutes".format((toc - tic)/60))
-        
-        # Save this SimilarityMatrix instance
-        outfile = sim_mat.file + '.pickle'
-        if not os.path.isdir(sim_mat.res_dir):
-            os.makedirs(sim_mat.res_dir)
-        print("Pickling SimilarityMatrix object to {}".format(outfile))
-        with open(outfile, 'wb') as pkl:
-            pickle.dump(sim_mat, pkl)
+    # Calculate similarity matrix: run cka for all roi-layer pairs
+    tic = time.time()
+    sim_mat.calculate_similarity_matrix()
+    toc = time.time()
+    print("Calculating sim mat took {} minutes".format((toc - tic)/60))
+    
+    # Save this SimilarityMatrix instance
+    outfile = sim_mat.file + '.pickle'
+    if not os.path.isdir(sim_mat.res_dir):
+        os.makedirs(sim_mat.res_dir)
+    print("Pickling SimilarityMatrix object to {}".format(outfile))
+    with open(outfile, 'wb') as pkl:
+        pickle.dump(sim_mat, pkl)
 
 if __name__ == '__main__':
     main()
