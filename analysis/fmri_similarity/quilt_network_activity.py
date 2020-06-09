@@ -49,6 +49,21 @@ OUT_DIR = '/data0/Dropbox/quilts/analysis/fmri_similarity/quilted_activities'
 class Quilter():
 
     def __init__(self, input_lang, model):
+        """Initialize instance attributes.
+
+        Parameters
+        ----------
+        input_lang : str
+            Input speech language identifier. 'enu', 'deu', or 'nld'
+        model : str
+            Network identifier corresponding to two nested directories. 
+            e.g. 'enu-enu-freeze/enu-enu-freeze'
+
+        Returns
+        -------
+        None
+
+        """
         self.in_lang = input_lang
         self.model = model
         audio_len_file = '/data0/Dropbox/quilts/analysis/fmri_similarity/{}_audio_lengths.pkl'
@@ -58,7 +73,13 @@ class Quilter():
 
 
     def quilt_all_speakers(self):
-        """Given a lanaguage and model, save all activation quilts for all speakers."""
+        """Save all activation quilts for all speakers for this lang and model.
+
+        Returns
+        -------
+        None
+
+        """
         with open('{}/{}/selected_speakers.txt'.format(STIM_DIR, self.in_lang), 'r') as fil:
             speakers = [name.split('.')[0] for name in fil.read().splitlines()]
 
@@ -73,7 +94,24 @@ class Quilter():
 
 
     def quilt_network_activations(self, speaker='inh_100cor_1'):
-        """Save the 1s quilted network activations for a given speaker, model and language."""
+        """Save all quilted activations for a given speaker, model and language.
+        
+        Segment network activations based on phonetic boundaries. For each 
+        layer in the network, reorder segments based on stored segment order
+        used when generating the experimental stimuli. Save one pickle file
+        containing the network activations at each layer corresponding to the
+        response to each of the 180 stimulus speech quilts. 
+        
+        Parameters
+        ----------
+        speaker : str
+            Speaker identifier used to load the input features and segment
+            order.
+        
+        Returns
+        -------
+        None
+        """
         # Don't redo if the quilt is alredy made
         out_file = '{}/{}_quilted.pkl'.format(self.out_dir, speaker)
         # if os.path.isfile(out_file):
@@ -106,8 +144,24 @@ class Quilter():
         out_file = '{}/{}_quilted.pkl'.format(self.out_dir, speaker)
         with open(out_file, 'wb') as f:
             pickle.dump(quilted_acts, f, pickle.HIGHEST_PROTOCOL)
-    
+
+
     def add_input_to_quilted_acts(self, speaker):
+        """Auxillary method to add the input features to the saved activations.
+        
+        (just because I didn't think to include them initially)
+
+        Parameters
+        ----------
+        speaker : str
+            Speaker identifier used to load the input features and segment
+            order.
+
+        Returns
+        -------
+        None
+
+        """
         # Load input segments
         all_input = self.segment_input(speaker)
         
@@ -130,12 +184,27 @@ class Quilter():
         
     
     def segment_input(self, speaker):
+        """Segment the input features according to phonetic boundaries.
+
+        Parameters
+        ----------
+        speaker : str
+            Speaker identifier to use when loading the input features.
+
+        Returns
+        -------
+        list
+            Segments of input features.
+
+        """
         all_input = []
         with open('{}/{}/proposed_utts/{}.txt'.format(STIM_DIR, self.in_lang, speaker), 'r') as fil:
             utterance_nos = fil.read().splitlines()
         # Divide the activations into the segments that were used in the speech quilts
         for utt_no in utterance_nos:
             if speaker == 'nrc_ajm' and utt_no == '38':
+                # An short utterance containing only silence for which the input
+                # was not recorded needs to be added manually
                 n_segments_38 = 4
                 # segs = [np.empty((1, all_input[0].shape[1])) for i in range(n_segments_38)]
                 segs = [np.zeros((1, all_input[0].shape[1])) for i in range(n_segments_38)]
@@ -168,7 +237,19 @@ class Quilter():
 
 
     def segment_activations(self, speaker):
-        """Split network activations into segments according to saved boundaries."""
+        """Segment network activations according to saved boundaries.
+
+        Parameters
+        ----------
+        speaker : str
+            Speaker identifier to use when loading the input features.
+
+        Returns
+        -------
+        dict of list
+            One list of activation segments for each layer.
+
+        """
         all_act = {layer:[] for layer in LAYERS}
         total_frames = 0
         total_segs = 0

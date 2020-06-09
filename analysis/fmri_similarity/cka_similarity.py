@@ -108,7 +108,6 @@ class SimilarityMatrix:
             self.file = self.file + '_shuffle_run'
             self.shuffle_run = True
 
-
         self.rois = rois
         self.new_rois = rois
         self.merged_rois = [roi for roi in rois if roi in MERGED_ROI_ORDER]
@@ -127,6 +126,8 @@ class SimilarityMatrix:
         self.net_stats = {}
     
     def __getstate__(self):
+        """Remove data before object serialization to save space. 
+        """
         state = self.__dict__.copy()
         # Don't pickle the data
         del state["network_activities"]
@@ -134,6 +135,8 @@ class SimilarityMatrix:
         return state
 
     def __setstate__(self, state):
+        """Add the data attributes back after loading a saved SimilarityMatrix.
+        """
         self.__dict__.update(state)
         # Add data back since it doesn't exist in the pickle
         self.network_activities = {layer:np.zeros((N_EXAMPLES, self.layer_sizes[layer])) for layer in LAYERS}
@@ -142,6 +145,9 @@ class SimilarityMatrix:
 
     def calculate_similarity_matrix(self):
         """Call Simon Kornblith's CKA function for all new roi-layer pairs.
+        
+        Loads data, centers data, checks for NaNs, calculates CKA, saves and
+        plots similarity matrices.
 
         Returns
         -------
@@ -206,6 +212,13 @@ class SimilarityMatrix:
         self.plot_sim_mat()
         
     def test_data(self):
+        """Calculate/plot summary statistics to verify the network activities.
+
+        Returns
+        -------
+        None
+
+        """
         n_bins = 50
         if not self.net_stats:
             fig, axs = plt.subplots(len(LAYERS), 6, figsize=(9, 14), facecolor='w', edgecolor='k')
@@ -305,15 +318,31 @@ class SimilarityMatrix:
         #     print('ROI {0}: nobs={1}. min={2:.3f}. max={3:.3f}, mean={4:.3f}, var={5:.5f}, skw={6:.3f}, kur={7:.3f}'.format(roi, nobs, min(mn), max(mx), meen.mean(), var.mean(), skw.mean(), kur.mean()))
         #     print('mean.shape: {}'.format(meen.shape))
         # plt.savefig(self.res_dir + '/fmri_summary.png', dpi=300)
-
-    def run_cka(self, i, j, roi, layer):
-        # Calculate debiased linear Centered Kernel Alignment
-        
-        cka_from_features = cka.feature_space_linear_cka(self.network_activities[layer],
-                                                         self.fmri_activities[roi], debiased=True)
-        return (i, j, roi, layer, cka_from_features)
+    # 
+    # def run_cka(self, i, j, roi, layer):
+    # 
+    #     # Calculate debiased linear Centered Kernel Alignment
+    # 
+    #     cka_from_features = cka.feature_space_linear_cka(self.network_activities[layer],
+    #                                                      self.fmri_activities[roi], debiased=True)
+    #     return (i, j, roi, layer, cka_from_features)
 
     def load_data(self):
+        """Prepare the DNN and BOLD activiation matrices on which to run CKA.
+        
+        Inserts the to-be-analyzed data from both domains into pre-initialized
+        instance attributes self.fmri_actvities and self.network_activities.
+        
+        A number of baseline models are also implemented. The random model 
+        replaces the to-be-analyzed data with uniform random data. The 
+        'shuffle' condition loads the true data but randomly permutes 
+        observations. 'shuffle_run' permutes only within runs.
+
+        Returns
+        -------
+        None
+
+        """
         tic = time.time()
         indexes = {1:{}, 2:{}}
 
@@ -330,10 +359,11 @@ class SimilarityMatrix:
                         # Fill matrices with concatenated activities from all 20 runs
                          # Load data and put in DataFrame
                         fmri_df_20 = self.load_fmri(ses, run, roi)
+                        indexes[ses][run] = fmri_df_20.index
                         # Prepare events DataFrame containing onsets and offsets
                         events = self.get_events(ses, run, fmri_df_20.index)
                         # Get the numpy matrix of to-be-analyzed activity
-                        fmri_1run, indexes[ses][run] = self.get_fmri_matrix_per_run(fmri_df_20, events)
+                        fmri_1run = self.get_fmri_matrix_per_run(fmri_df_20, events)
                         # print('Preparing matrices took {} seconds.'.format(toc - tic))
                         len_this_run = fmri_1run.shape[0]
                         # print(f'ses:{ses}, run:{run}, fmri size:{len_this_run}')
@@ -417,8 +447,16 @@ class SimilarityMatrix:
                     np.save(outfile, self.network_activities[layer])
         toc = time.time()
         print('Took {} minutes to load all data'.format((toc - tic)/60))
-    
+
+
     def center_data(self):
+        """Subtract the means from all network activities and fmri activities.
+
+        Returns
+        -------
+        None
+
+        """
         for layer in LAYERS:
             self.network_activities[layer] = self.network_activities[layer] - self.network_activities[layer].mean(axis=0, keepdims=True)
         for roi in self.new_rois:
@@ -426,6 +464,26 @@ class SimilarityMatrix:
 
 
     def get_events(self, ses, run, index):
+        """Load the events file and calculate stimulus offsets.
+        
+        Since we are using time indexing with less than infinite precision,
+        offsets need to be set appropriately so that the activations for each
+        quilt correspond to the same number of rows.
+
+        Parameters
+        ----------
+        ses : int
+            Session identifer (1 or 2).
+        run : int
+            Run identifier (1--10).
+        index : pandas TimeDelta index
+            Index from the DataFrame contaning the BOLD activity.
+
+        Returns
+        -------
+        None
+
+        """
         events = pandas.read_csv(EVENTS_FILE.format(DATA_DIR, self.subject, ses, run), sep='\t')
         events['onset'] = pandas.to_timedelta(events['onset'], unit='s')
         events['duration'] = pandas.to_timedelta(events['duration'], unit='s')
@@ -457,6 +515,24 @@ class SimilarityMatrix:
         return events
 
     def load_fmri(self, ses, run, roi):
+        """Load and resample the BOLD activity of a single run.
+
+        Parameters
+        ----------
+        ses : int
+            Session identifer (1 or 2).
+        run : int
+            Run identifier (1--10).
+        roi : str
+            ROI identifier. One of 'CN', 'SOC', 'MGN', 'IC', 'HG', 'PP', 'PT',
+            'STGa', 'STGp'
+
+        Returns
+        -------
+        pandas DataFrame
+            BOLD activity resampled to one frame every 20 ms.
+
+        """
         # Load fmri from one ROI and one run
         if roi in ['CN', 'SOC', 'IC', 'MGN']:
             fmri_file = SC_ROI_FILE.format(self.subject, ses, run, roi)
@@ -477,13 +553,28 @@ class SimilarityMatrix:
         return fmri_df_20
                 
     def get_fmri_matrix_per_run(self, fmri_df_20, events):
+        """Extract stimulation blocks from fMRI.
+
+        Parameters
+        ----------
+        fmri_df_20 : pandas DataFrame
+             contains fMRI activity for a single run and ROI
+        events : pandas DataFrame
+            contains stimuli timing and duration info
+
+        Returns
+        -------
+        numpy array
+            to-be-analyzed fMRI activity. Rows are timepoints. Columns are 
+            voxels. 
+        """
         # Cut out just the time points corresponding to auditory stimulation
         block0 = fmri_df_20[events['onset'][0] + pandas.to_timedelta(6, unit='s'):events['offset'][2]].to_numpy()
         block1 = fmri_df_20[events['onset'][3] + pandas.to_timedelta(6, unit='s'):events['offset'][5]].to_numpy()
         block2 = fmri_df_20[events['onset'][6] + pandas.to_timedelta(6, unit='s'):events['offset'][8]].to_numpy()
         X = np.concatenate([block0[:BLOCK_LEN, :], block1[:BLOCK_LEN, :], block2[:BLOCK_LEN, :]], axis=0)
         # X = fmri_df_20.to_numpy()
-        return X, fmri_df_20.index
+        return X
         
     def get_cnn_matrix_per_run(self, ses, run, index, events):
         """Load quilted activations and arrange in DataFrame matched to fMRI.
@@ -589,12 +680,22 @@ class SimilarityMatrix:
 
             # matrices[layer] = Y[:n_rows, :]
             matrices[layer] = Y
-    
 
         return matrices
 
 
     def save_sim_mat(self):
+        """Saves the calculated CKA similarity matrix as a numpy array.
+        
+        The columns of the similarity matrix are reordered so that every saved
+        matrix has the ROIs in the same order, even if they were originally
+        calculated in a different order. 
+
+        Returns
+        -------
+        None
+
+        """
         
         col = 0
         for roi in MERGED_ROI_ORDER:
@@ -606,7 +707,16 @@ class SimilarityMatrix:
 
 
     def plot_sim_mat(self):
-        """Call this function after save_sim_mat has been called."""
+        """Plots CKA similarity matrix after all values have been calculated.
+        
+        This method is called after same_sim_mat has been called and stores the
+        resulting figure in the same results directory as the pickled SimilarityMatrix.
+
+        Returns
+        -------
+        None
+
+        """
         # Create the results directory if it does not exist
         if not os.path.isdir(self.res_dir):
             os.makedirs(self.res_dir)
@@ -693,8 +803,26 @@ class SimilarityMatrix:
     #     return act_allruns, fmri_allruns
         
     def get_roi_size(self, roi):
+        """Returns the number of voxels in the given ROI.
+        
+        Loads the first run of the first session to access the size of the
+        stored numpy array.
+
+        Parameters
+        ----------
+        roi : str
+            ROI identifier (e.g. 'CN', 'HG' pr 'PP')
+
+        Returns
+        -------
+        int
+            Number of voxels in the extracted ROI
+
+        """
+        # Subcortical ROIs
         if roi in ['CN', 'SOC', 'IC', 'MGN']:
             fmri = np.load(SC_ROI_FILE.format(self.subject, 1, 1, roi))
+        # Cortical ROIs
         else:
             fmri = np.load(ROI_FILE.format(self.subject, 1, 1, roi))
         size = fmri.shape[1]
@@ -706,7 +834,19 @@ class SimilarityMatrix:
         
         This function is called after loading a previously pickled SimilarityMatrix.
         After calling this method, a call to calculate_similarity_matrix will
-        calculate CKA similarity for any newly added ROIs.
+        calculate CKA similarity for any newly added ROIs, skipping ROIs for
+        which CKA similarity has already been stored.
+
+        Parameters
+        ----------
+        rois : list of str
+            ROI identifiers (e.g. CN, SOC, HG, etc.) to be included in this
+            SimilarityMatrix. 
+
+        Returns
+        -------
+        None
+
         """
         self.new_rois = []
         for roi in rois:
