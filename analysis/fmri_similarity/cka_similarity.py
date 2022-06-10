@@ -54,7 +54,7 @@ class SimilarityMatrix:
     '''
 
     def __init__(self, subject, model, rois, shuffle=None, specifier=None,
-                 metric=None):
+                 metric='cka', kernel='rbf'):
         """Initialize SimilarityMatrix object.
 
         Parameters
@@ -83,16 +83,25 @@ class SimilarityMatrix:
         self.model = model
         self.subject = subject
         self.metric = metric
+        self.kernel = kernel
         self.specifier = specifier
         self.res_dir = '{}/sub-{}/{}'.format(RESULTS_DIR, self.subject, self.model.split('/')[0])
         # Create the results directory if it does not exist
         if not os.path.isdir(self.res_dir):
             os.makedirs(self.res_dir)
-        self.file = '{}/sub-{}_model-{}_{}_similarity_matrix_{}'.format(self.res_dir,
-                                                                     self.subject,
-                                                                     self.model.replace('/', '_'),
-                                                                     self.metric,
-                                                                     self.specifier)
+        if metric == 'cka':
+            self.file = '{}/sub-{}_model-{}_{}-{}_similarity_matrix_{}'.format(self.res_dir,
+                                                                               self.subject,
+                                                                               self.model.replace('/', '_'),
+                                                                               self.kernel,
+                                                                               self.metric,
+                                                                               self.specifier)
+        else:
+            self.file = '{}/sub-{}_model-{}_{}_similarity_matrix_{}'.format(self.res_dir,
+                                                                            self.subject,
+                                                                            self.model.replace('/', '_'),
+                                                                            self.metric,
+                                                                            self.specifier)
         self.shuffle = False
         self.shuffle_run = False
         if shuffle == 'shuffle':
@@ -151,7 +160,7 @@ class SimilarityMatrix:
         # Load all data
         self.load_data()
         self.center_data()
-        R2 = {layer:{} for layer in LAYERS}
+        R2 = {layer: {} for layer in LAYERS}
         for roi in self.new_rois:
             for j, layer in enumerate(LAYERS):
                 # Check for NaNs
@@ -161,9 +170,14 @@ class SimilarityMatrix:
                     print('ROI {} contains NaNs.'.format(roi))
                 if self.metric == 'cka':
                     # Call CKA
-                    sim = cka.feature_space_linear_cka(self.net_activities[layer],
-                                                   self.fmri_activities[roi],
-                                                   debiased=True)
+                    if self.kernel == 'linear':
+                        sim = cka.feature_space_linear_cka(self.net_activities[layer],
+                                                           self.fmri_activities[roi],
+                                                           debiased=True)
+                    elif self.kernel == 'rbf':
+                        net = self.net_activities[layer][::2, :]
+                        fmri = self.fmri_activities[roi][::2, :]
+                        sim = cka.cka(cka.gram_rbf(net, 0.5), cka.gram_rbf(fmri, 0.5), debiased=True)
                 elif self.metric == 'ridge':
                     reg = Ridge()
                     nvoxel = self.roi_sizes[roi]
@@ -622,6 +636,10 @@ class SimilarityMatrix:
         plt.xticks(np.arange(self.n_rois), self.rois, rotation='vertical')
         plt.title('{} sub-{}'.format(self.model.split('/')[0], self.subject))
         fig.colorbar(im)
+        if self.metric == 'cka':
+            method = f'{self.kernel}-cka'
+        else:
+            method = self.metric
         if self.specifier:
             spec = '_' + self.specifier
         else:
@@ -629,15 +647,15 @@ class SimilarityMatrix:
         if self.shuffle:
             name = '{}/sub-{}_model-{}_{}_similarity_matrix{}_shuffle.png'
             save_file = name.format(self.res_dir, self.subject,
-                                    self.model.replace('/', '_'), self.metric, spec)
+                                    self.model.replace('/', '_'), method, spec)
         elif self.shuffle_run:
             name = '{}/sub-{}_model-{}_{}_similarity_matrix{}_shuffle_run.png'
             save_file = name.format(self.res_dir, self.subject,
-                                    self.model.replace('/', '_'), self.metric, spec)
+                                    self.model.replace('/', '_'), method, spec)
         else:
             name = '{}/sub-{}_model-{}_{}_similarity_matrix{}.png'
             save_file = name.format(self.res_dir, self.subject,
-                                    self.model.replace('/', '_'), self.metric, spec)
+                                    self.model.replace('/', '_'), method, spec)
         plt.savefig(save_file, bbox_inches='tight', dpi=300)
 
     def get_roi_size(self, roi):
@@ -727,9 +745,12 @@ def main():
     parser.add_argument("-m", "--metric", type=str,
                         help="Which similarity metric to use. cka, ridge",
                         dest="metric", default='cka')
-    parser.add_argument("-u", "--subject2", type=int,
-                        help="subject with with to compare.", dest="sub2",
-                        default=None)
+    parser.add_argument("-k", "--kernel", type=str,
+                        help="Which kernel to use. linear or rbf",
+                        dest="kernel", default='rbf')
+    # parser.add_argument("-u", "--subject2", type=int,
+    #                     help="subject with with to compare.", dest="sub2",
+    #                     default=None)
     args = parser.parse_args()
 
     sim_mat = SimilarityMatrix(args.subject, args.model, args.rois,
